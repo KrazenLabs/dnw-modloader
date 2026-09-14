@@ -6,7 +6,7 @@ It loads mod DLLs from a `Mods` folder next to the game, gives them a small API 
 
 ## Install
 
-1. Download the most recent release.
+1. Download the most recent [release](https://github.com/KrazenLabs/dnw-modloader/releases).
 2. Extract it into the game folder next to the `DragNWash.exe`.
 3. Start the game as usual.
 
@@ -69,6 +69,8 @@ inside a mod folder.
 
 Version constraints: `>=1.2`, `>1.2`, `<=`, `<`, `=1.2.0`, `^1.2` (same major), `~1.2` (same major.minor), `*`.
 For a bare DLL without `mod.json` describe it with `[ModInfo("id", "Name", "1.0.0")]` on the entry class.
+
+Check out the included "ExampleMod" for an example of a simple mod that displays some debugging information and uses some Harmony hooks.
 
 ## Repository layout
 
