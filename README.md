@@ -2,7 +2,7 @@
 
 # DnW Mod Loader
 
-A mod loader for **Drag'n Wash** (Gator Dragon Games; Unity 6000.3).
+A mod loader for **[Drag'n Wash](https://gatordragongames.itch.io/dragnwash)** (Gator Dragon Games; Unity 6000.3).
 
 It loads mod DLLs from a `Mods` folder next to the game, gives them a small API and shows an in-game overlay with the mod list and logs.
 
