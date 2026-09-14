@@ -1,0 +1,11 @@
+bin/
+obj/
+release/
+/*.dll
+/*.pdb
+/*.xml
+/docs/
+/DOORSTOP-NOTICE.txt
+/preloader-error.log
+*.user
+.vs/

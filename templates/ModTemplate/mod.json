@@ -1,0 +1,12 @@
+{
+  "id": "yourname.mymod",
+  "name": "My Mod",
+  "version": "1.0.0",
+  "author": "Your Name",
+  "description": "What the mod does.",
+  "assembly": "MyMod.dll",
+  "loaderVersion": ">=1.2.0",
+  "dependencies": [],
+  "loadAfter": [],
+  "loadBefore": []
+}

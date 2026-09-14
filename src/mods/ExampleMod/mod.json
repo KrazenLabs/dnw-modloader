@@ -1,0 +1,13 @@
+{
+  "id": "kl.examplemod",
+  "name": "Example Mod",
+  "version": "1.0.0",
+  "author": "KrazenLabs",
+  "description": "Demonstrates config entries, callbacks and Harmony patches.",
+  "assembly": "ExampleMod.dll",
+  "loaderVersion": ">=1.0.0",
+  "dependencies": [],
+  "loadAfter": [],
+  "loadBefore": [],
+  "url": "https://www.krazenlabs.com"
+}
