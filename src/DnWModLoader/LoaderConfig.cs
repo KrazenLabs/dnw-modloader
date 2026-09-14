@@ -33,10 +33,6 @@ namespace DnWModLoader
         [JsonProperty("startupBannerSeconds")]
         public float StartupBannerSeconds { get; set; } = 12f;
 
-        // Overlay delay; Opening it too early can crash the game
-        [JsonProperty("overlayOpenDelayAfterSceneLoad")]
-        public float OverlayOpenDelayAfterSceneLoad { get; set; } = 5f;
-
         [JsonProperty("logLevel")]
         [JsonConverter(typeof(StringEnumConverter))]
         public LogLevel LogLevel { get; set; } = LogLevel.Debug;

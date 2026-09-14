@@ -9,3 +9,4 @@ release/
 /preloader-error.log
 *.user
 .vs/
+*.af

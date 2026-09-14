@@ -20,8 +20,6 @@ namespace DnWModLoader
 
         private readonly LoaderConfig _loaderConfig;
         private readonly Action _onLoaderConfigChanged;
-        private readonly RowVirtualizer _rows = new RowVirtualizer();
-        private readonly List<Action> _rowChanges = new List<Action>();
         private readonly Dictionary<string, bool> _expanded = new Dictionary<string, bool>();
         private readonly Dictionary<string, string> _editBuffers = new Dictionary<string, string>();
         private readonly Dictionary<string, KeyValuePair<string, float>> _errors = new Dictionary<string, KeyValuePair<string, float>>();
@@ -31,8 +29,6 @@ namespace DnWModLoader
         private bool _showAdvanced;
         private Vector2 _scroll;
         private string _focusedName = "";
-        private float _loggedContentHeight = -1f;
-        private float _nextContentLog;
 
         private GUIStyle _header, _dim, _error, _box, _sectionHeader, _small;
         private Texture2D _boxTexture;
@@ -45,39 +41,24 @@ namespace DnWModLoader
 
         public bool TextFieldFocused { get; private set; }
 
-        public bool DrawAllRows
-        {
-            get { return _rows.DrawAll; }
-            set { _rows.DrawAll = value; }
-        }
-
-        public int RowsDrawn { get { return _rows.RowsDrawn; } }
-
-        public int RowsTotal { get { return _rows.RowsTotal; } }
-
-        public float ContentHeight { get { return _rows.ContentHeight; } }
-
         // Expands one mod, collapses the others
         public void FocusMod(string modId)
         {
-            ChangeRows(() =>
-            {
-                SetAllExpanded(false);
-                _expanded[modId] = true;
-                _search = "";
-                _scroll = Vector2.zero;
-            });
+            SetAllExpanded(false);
+            _expanded[modId] = true;
+            _search = "";
+            _scroll = Vector2.zero;
         }
 
-        public void Draw(float viewportHeight)
+        public void Draw()
         {
             EnsureStyles();
-            if (Event.current.type == EventType.Layout) BeginFrame();
+            _focusedName = GUI.GetNameOfFocusedControl() ?? "";
+            TextFieldFocused = _focusedName.StartsWith(ControlPrefix, StringComparison.Ordinal);
 
             DrawToolbar();
             string filter = _search.Trim();
             _scroll = GUILayout.BeginScrollView(_scroll, GUILayout.ExpandHeight(true));
-            _rows.BeginPass(_scroll, Mathf.Max(100f, viewportHeight));
             int shown = DrawLoaderSettings(filter) ? 1 : 0;
             foreach (var mod in ModLoader.Mods)
                 if (DrawMod(mod, filter)) shown++;
@@ -87,26 +68,6 @@ namespace DnWModLoader
                 GUILayout.Label(filter.Length > 0 ? "Nothing matches \"" + filter + "\"." : "No mod has registered settings yet.", _dim);
             }
             GUILayout.EndScrollView();
-            _rows.EndPass();
-
-            if (Event.current.type == EventType.Repaint) LogContentHeightChanges();
-        }
-
-        private void BeginFrame()
-        {
-            if (_rowChanges.Count > 0)
-            {
-                foreach (var change in _rowChanges) change();
-                _rowChanges.Clear();
-                _rows.RemeasureNextFrame();
-            }
-            _focusedName = GUI.GetNameOfFocusedControl() ?? "";
-            TextFieldFocused = _focusedName.StartsWith(ControlPrefix, StringComparison.Ordinal);
-        }
-
-        private void ChangeRows(Action change)
-        {
-            _rowChanges.Add(change);
         }
 
         private void DrawToolbar()
@@ -114,21 +75,18 @@ namespace DnWModLoader
             GUILayout.BeginHorizontal();
             GUILayout.Label("Search", GUILayout.Width(50));
             GUI.SetNextControlName(ControlPrefix + "search");
-            string search = GUILayout.TextField(_search, GUILayout.Width(220));
-            if (search != _search) ChangeRows(() => _search = search);
+            _search = GUILayout.TextField(_search, GUILayout.Width(220));
             if (GUILayout.Button("x", GUILayout.Width(22)))
             {
                 GUI.FocusControl(null);
-                ChangeRows(() => _search = "");
+                _search = "";
             }
             GUILayout.Space(10);
-            bool descriptions = GUILayout.Toggle(_showDescriptions, "Descriptions", GUILayout.Width(100));
-            if (descriptions != _showDescriptions) ChangeRows(() => _showDescriptions = descriptions);
-            bool advanced = GUILayout.Toggle(_showAdvanced, "Advanced", GUILayout.Width(80));
-            if (advanced != _showAdvanced) ChangeRows(() => _showAdvanced = advanced);
+            _showDescriptions = GUILayout.Toggle(_showDescriptions, "Descriptions", GUILayout.Width(100));
+            _showAdvanced = GUILayout.Toggle(_showAdvanced, "Advanced", GUILayout.Width(80));
             GUILayout.FlexibleSpace();
-            if (GUILayout.Button("Expand all", GUILayout.Width(80))) ChangeRows(() => SetAllExpanded(true));
-            if (GUILayout.Button("Collapse all", GUILayout.Width(85))) ChangeRows(() => SetAllExpanded(false));
+            if (GUILayout.Button("Expand all", GUILayout.Width(80))) SetAllExpanded(true);
+            if (GUILayout.Button("Collapse all", GUILayout.Width(85))) SetAllExpanded(false);
             GUILayout.EndHorizontal();
         }
 
@@ -144,14 +102,12 @@ namespace DnWModLoader
             bool expanded = filtering || IsExpanded(modId, true);
 
             GUILayout.BeginVertical(_box);
-            _rows.BeginRow("mod:" + modId, "mod header", required: true);
             GUILayout.BeginHorizontal();
             if (GUILayout.Button((expanded ? "v  " : ">  ") + mod.Info.Name + "  " + mod.Info.VersionString, _header, GUILayout.ExpandWidth(true)) && !filtering)
-                ChangeRows(() => _expanded[modId] = !expanded);
+                _expanded[modId] = !expanded;
             GUILayout.Label(config.HasPendingChanges ? "saving..." : "", _small, GUILayout.Width(60));
             if (GUILayout.Button("Reset all", GUILayout.Width(70))) config.ResetAll();
             GUILayout.EndHorizontal();
-            _rows.EndRow();
 
             if (expanded)
                 foreach (var section in sections) DrawSection(modId, config, section.Key, section.Value);
@@ -185,7 +141,6 @@ namespace DnWModLoader
         private void DrawSection(string modId, ModConfig config, string sectionKey, List<ConfigEntryBase> entries)
         {
             var info = config.GetSectionInfo(sectionKey);
-            _rows.BeginRow("section:" + modId + ":" + sectionKey, "section header", required: true);
             GUILayout.Space(4);
             GUILayout.BeginHorizontal();
             GUILayout.Label(!string.IsNullOrEmpty(info?.DisplayName) ? info.DisplayName : sectionKey, _sectionHeader);
@@ -193,47 +148,35 @@ namespace DnWModLoader
             if (GUILayout.Button("Reset", GUILayout.Width(ResetWidth))) config.ResetSection(sectionKey);
             GUILayout.EndHorizontal();
             if (!string.IsNullOrEmpty(info?.Description)) GUILayout.Label(info.Description, _dim);
-            _rows.EndRow();
 
             foreach (var entry in entries)
-            {
-                string controlId = ControlPrefix + modId + "." + entry.Section + "." + entry.Key;
-                var widget = WidgetFor(entry);
-                bool described = _showDescriptions && !string.IsNullOrEmpty(entry.Description);
-                bool live = _rows.BeginRow(controlId, widget + (described ? " with description" : ""), required: _focusedName == controlId);
-                DrawEntry(entry, controlId, widget, live);
-                _rows.EndRow();
-            }
+                DrawEntry(entry, ControlPrefix + modId + "." + entry.Section + "." + entry.Key);
         }
 
-        private void DrawEntry(ConfigEntryBase entry, string controlId, Widget widget, bool live)
+        private void DrawEntry(ConfigEntryBase entry, string controlId)
         {
-            if (live)
-            {
-                GUILayout.BeginHorizontal();
-                GUILayout.Label(entry.DisplayName + (entry.Meta.RequiresRestart ? " *" : ""), GUILayout.Width(LabelWidth));
-            }
+            GUILayout.BeginHorizontal();
+            GUILayout.Label(entry.DisplayName + (entry.Meta.RequiresRestart ? " *" : ""), GUILayout.Width(LabelWidth));
             try
             {
-                switch (widget)
+                switch (WidgetFor(entry))
                 {
-                    case Widget.Toggle: DrawToggle(entry, live); break;
-                    case Widget.Choice: DrawChoice(entry, Choices(entry), live); break;
-                    case Widget.Slider: DrawSlider(entry, controlId, live); break;
-                    default: DrawValueField(entry, controlId, 0f, live); break;
+                    case Widget.Toggle: DrawToggle(entry); break;
+                    case Widget.Choice: DrawChoice(entry, Choices(entry)); break;
+                    case Widget.Slider: DrawSlider(entry, controlId); break;
+                    default: DrawValueField(entry, controlId, 0f); break;
                 }
             }
             catch (Exception e)
             {
-                if (live) GUILayout.Label("error: " + e.Message, _error);
+                GUILayout.Label("error: " + e.Message, _error);
             }
-            if (live) GUI.enabled = !entry.IsDefault;
-            if (Button(live, "Reset", ResetWidth))
+            GUI.enabled = !entry.IsDefault;
+            if (GUILayout.Button("Reset", GUILayout.Width(ResetWidth)))
             {
                 entry.Reset();
                 _editBuffers.Remove(controlId);
             }
-            if (!live) return;
             GUI.enabled = true;
             GUILayout.EndHorizontal();
 
@@ -266,16 +209,14 @@ namespace DnWModLoader
             return type.IsEnum ? Enum.GetValues(type) : entry.Meta.AcceptableValues;
         }
 
-        private static void DrawToggle(ConfigEntryBase entry, bool live)
+        private static void DrawToggle(ConfigEntryBase entry)
         {
             bool current = (bool)entry.BoxedValue;
-            bool next = live
-                ? GUILayout.Toggle(current, current ? " on" : " off", GUILayout.ExpandWidth(true))
-                : GUI.Toggle(Rect.zero, current, GUIContent.none, GUIStyle.none);
+            bool next = GUILayout.Toggle(current, current ? " on" : " off", GUILayout.ExpandWidth(true));
             if (next != current) entry.BoxedValue = next;
         }
 
-        private static void DrawChoice(ConfigEntryBase entry, Array values, bool live)
+        private static void DrawChoice(ConfigEntryBase entry, Array values)
         {
             object current = entry.BoxedValue;
             int index = -1;
@@ -284,21 +225,18 @@ namespace DnWModLoader
                 var candidate = values.GetValue(i);
                 if (Equals(candidate, current) || (candidate != null && current != null && candidate.ToString() == current.ToString())) { index = i; break; }
             }
-            if (Button(live, "<", 26) && values.Length > 0) entry.BoxedValue = values.GetValue((index - 1 + values.Length) % values.Length);
-            if (live) GUILayout.Label(current != null ? current.ToString() : "(null)", GUILayout.Width(170));
-            if (Button(live, ">", 26) && values.Length > 0) entry.BoxedValue = values.GetValue((index + 1) % values.Length);
-            if (live) GUILayout.Label(values.Length > 1 ? (index + 1) + " / " + values.Length : "", GUILayout.ExpandWidth(true));
+            if (GUILayout.Button("<", GUILayout.Width(26)) && values.Length > 0) entry.BoxedValue = values.GetValue((index - 1 + values.Length) % values.Length);
+            GUILayout.Label(current != null ? current.ToString() : "(null)", GUILayout.Width(170));
+            if (GUILayout.Button(">", GUILayout.Width(26)) && values.Length > 0) entry.BoxedValue = values.GetValue((index + 1) % values.Length);
+            GUILayout.Label(values.Length > 1 ? (index + 1) + " / " + values.Length : "", GUILayout.ExpandWidth(true));
         }
 
-        private void DrawSlider(ConfigEntryBase entry, string controlId, bool live)
+        private void DrawSlider(ConfigEntryBase entry, string controlId)
         {
             var type = ValueType(entry);
             double min = entry.Meta.Min.Value, max = entry.Meta.Max.Value;
             double current = Convert.ToDouble(entry.BoxedValue, CultureInfo.InvariantCulture);
-            float slid = live
-                ? GUILayout.HorizontalSlider((float)current, (float)min, (float)max, GUILayout.ExpandWidth(true))
-                : GUI.HorizontalSlider(Rect.zero, (float)current, (float)min, (float)max, GUIStyle.none, GUIStyle.none);
-            double next = slid;
+            double next = GUILayout.HorizontalSlider((float)current, (float)min, (float)max, GUILayout.ExpandWidth(true));
             double step = entry.Meta.Step;
             if (ConfigEntryBase.IsIntegerType(type) && step <= 0) step = 1;
             if (step > 0) next = Math.Round((next - min) / step) * step + min;
@@ -308,10 +246,10 @@ namespace DnWModLoader
                 entry.BoxedValue = Convert.ChangeType(next, type, CultureInfo.InvariantCulture);
                 _editBuffers.Remove(controlId);
             }
-            DrawValueField(entry, controlId, ValueFieldWidth, live);
+            DrawValueField(entry, controlId, ValueFieldWidth);
         }
 
-        private void DrawValueField(ConfigEntryBase entry, string controlId, float width, bool live)
+        private void DrawValueField(ConfigEntryBase entry, string controlId, float width)
         {
             bool focused = _focusedName == controlId;
             string value = entry.ValueToDisplayString();
@@ -323,7 +261,8 @@ namespace DnWModLoader
             }
 
             string shown = focused && _editBuffers.TryGetValue(controlId, out var buffer) ? buffer : value;
-            string edited = TextField(live, controlId, shown, width);
+            GUI.SetNextControlName(controlId);
+            string edited = width > 0f ? GUILayout.TextField(shown, GUILayout.Width(width)) : GUILayout.TextField(shown, GUILayout.ExpandWidth(true));
             if (!focused) return;
 
             var e = Event.current;
@@ -351,33 +290,19 @@ namespace DnWModLoader
             else _errors[controlId] = new KeyValuePair<string, float>("Invalid value: " + error, Time.realtimeSinceStartup);
         }
 
-        private static bool Button(bool live, string label, float width)
-        {
-            return live ? GUILayout.Button(label, GUILayout.Width(width)) : GUI.Button(Rect.zero, GUIContent.none, GUIStyle.none);
-        }
-
-        private static string TextField(bool live, string controlName, string text, float width)
-        {
-            GUI.SetNextControlName(controlName);
-            if (!live) return GUI.TextField(Rect.zero, "", GUIStyle.none);
-            return width > 0f ? GUILayout.TextField(text, GUILayout.Width(width)) : GUILayout.TextField(text, GUILayout.ExpandWidth(true));
-        }
-
         private bool DrawLoaderSettings(string filter)
         {
             bool filtering = filter.Length > 0;
-            if (filtering && !Matches(filter, "Mod Loader", "loader", "overlay", "hotkey", "log", "banner", "delay")) return false;
+            if (filtering && !Matches(filter, "Mod Loader", "loader", "overlay", "hotkey", "log", "banner")) return false;
             bool expanded = filtering || IsExpanded(LoaderId, false);
 
-            _rows.BeginRow(LoaderId, "loader", required: true);
             GUILayout.BeginVertical(_box);
             GUILayout.BeginHorizontal();
             if (GUILayout.Button((expanded ? "v  " : ">  ") + "DnW Mod Loader  " + ModLoader.Version, _header, GUILayout.ExpandWidth(true)) && !filtering)
-                ChangeRows(() => _expanded[LoaderId] = !expanded);
+                _expanded[LoaderId] = !expanded;
             GUILayout.EndHorizontal();
             if (expanded) DrawLoaderEntries();
             GUILayout.EndVertical();
-            _rows.EndRow();
             return true;
         }
 
@@ -411,14 +336,6 @@ namespace DnWModLoader
             GUILayout.EndHorizontal();
 
             GUILayout.BeginHorizontal();
-            GUILayout.Label("Open delay after scene load", GUILayout.Width(LabelWidth));
-            float delay = Mathf.Round(GUILayout.HorizontalSlider(c.OverlayOpenDelayAfterSceneLoad, 0f, 15f, GUILayout.Width(160)) * 2f) / 2f;
-            if (Math.Abs(delay - c.OverlayOpenDelayAfterSceneLoad) > 0.25f) { c.OverlayOpenDelayAfterSceneLoad = delay; changed = true; }
-            GUILayout.Label(c.OverlayOpenDelayAfterSceneLoad.ToString("0.0") + " s", GUILayout.Width(40));
-            GUILayout.Label("the overlay waits this long after a scene has loaded before it opens (prevents potential crashes)", _small);
-            GUILayout.EndHorizontal();
-
-            GUILayout.BeginHorizontal();
             GUILayout.Label("Log level", GUILayout.Width(LabelWidth));
             var level = CycleEnum(c.LogLevel, new[] { LogLevel.Debug, LogLevel.Info, LogLevel.Warning, LogLevel.Error });
             if (level != c.LogLevel) { c.LogLevel = level; Log.MinimumLevel = level; changed = true; }
@@ -437,8 +354,7 @@ namespace DnWModLoader
             GUILayout.EndHorizontal();
 
             if (_showDescriptions)
-                GUILayout.Label("Stored in Mods/ModLoader.json. Disabled mods are managed on the Mods tab. Settings rows drawn: "
-                    + RowsDrawn + " of " + RowsTotal + ", content " + ContentHeight.ToString("0") + " px.", _dim);
+                GUILayout.Label("Stored in Mods/ModLoader.json. Disabled mods are managed on the Mods tab.", _dim);
 
             if (changed)
             {
@@ -475,17 +391,6 @@ namespace DnWModLoader
             foreach (var text in texts)
                 if (!string.IsNullOrEmpty(text) && text.IndexOf(filter, StringComparison.OrdinalIgnoreCase) >= 0) return true;
             return false;
-        }
-
-        private void LogContentHeightChanges()
-        {
-            float now = Time.realtimeSinceStartup;
-            if (now < _nextContentLog || Mathf.Abs(ContentHeight - _loggedContentHeight) < 1f) return;
-            ModLoader.Logger.Debug("Settings panel: content " + ContentHeight.ToString("0") + " px"
-                + (_loggedContentHeight >= 0f ? " (was " + _loggedContentHeight.ToString("0") + ")" : "")
-                + ", rows drawn " + RowsDrawn + " of " + RowsTotal + ", scroll " + _scroll.y.ToString("0") + ".");
-            _loggedContentHeight = ContentHeight;
-            _nextContentLog = now + 1f;
         }
 
         private void EnsureStyles()

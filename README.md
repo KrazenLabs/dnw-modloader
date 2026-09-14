@@ -8,7 +8,8 @@ It loads mod DLLs from a `Mods` folder next to the game, gives them a small API 
 
 1. Download the most recent [release](https://github.com/KrazenLabs/dnw-modloader/releases).
 2. Extract it into the game folder next to the `DragNWash.exe`.
-3. Start the game as usual.
+3. Set the game to start in Direct3D 11 by setting the -force-d3d11 launch option (On Steam: Properties > General > Launch Options).
+4. Start the game as usual.
 
 The structure should look like this after installation:
 ```
@@ -72,18 +73,6 @@ For a bare DLL without `mod.json` describe it with `[ModInfo("id", "Name", "1.0.
 
 Check out the included "ExampleMod" for an example of a simple mod that displays some debugging information and uses some Harmony hooks.
 
-## Repository layout
+## Known issues
 
-```
-DnWModLoader/
-├── build.ps1                      <- builds everything and assembles the package
-├── Directory.Build.props          <- game folder detection, shared build settings
-├── DnWModLoader.sln
-├── src/DnWModLoader/              <- the runtime (DnWModLoader.dll)
-├── src/mods/ExampleMod/           <- sample mod (config, callbacks, three Harmony patches)
-├── templates/ModTemplate/         <- starter project for new mods
-├── tools/doorstop/                <- UnityDoorstop binary + config template for the package
-├── tools/dropin/                  <- Uninstall.cmd and Mods/README.txt for the package
-├── release/                       <- DnWModLoader-<version>.zip (created by build.ps1)
-└── THIRD-PARTY-NOTICES.md
-```
+Direct3D 12 can cause random crashes during UI start. Please use the -force-d3d11 launch options to launch the game in Direct3D 11.

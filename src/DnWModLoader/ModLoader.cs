@@ -22,9 +22,9 @@ namespace DnWModLoader
 
     public static class ModLoader
     {
-        public const string Version = "1.2.0";
+        public const string Version = "1.3.0";
 
-        public static readonly Version ParsedVersion = new Version(1, 2, 0);
+        public static readonly Version ParsedVersion = new Version(1, 3, 0);
 
         public const string ModsFolderName = "Mods";
         public const string ConfigFolderName = "config";
@@ -209,6 +209,7 @@ namespace DnWModLoader
                             + " | Unity " + Application.unityVersion + " | " + Application.platform);
             }
             catch (Exception e) { Logger.Debug("Application info unavailable: " + e.Message); }
+            if (Direct3D12Warning.Applies()) Logger.Warning(Direct3D12Warning.LogMessage);
             try { Logger.Debug("OS: " + SystemInfo.operatingSystem + " | CLR: " + Environment.Version + " | 64-bit: " + Environment.Is64BitProcess); } catch { }
             try { Logger.Debug("Command line: " + string.Join(" ", Environment.GetCommandLineArgs())); } catch { }
             foreach (var line in Preloader.TakeEarlyLog()) Logger.Debug("[preloader] " + line);
@@ -819,7 +820,6 @@ namespace DnWModLoader
                 {
                     Logger.Debug("Scene loaded: " + scene.name + " (" + mode + ")");
                     EnsureBehaviour("scene load");
-                    try { Behaviour?.Overlay?.NoteSceneLoaded(scene.name); } catch (Exception e) { Logger.Debug("Overlay scene hook failed: " + e.Message); }
                     Dispatch("OnSceneLoaded", m => m.OnSceneLoaded(scene, mode));
                 };
                 SceneManager.sceneUnloaded += scene =>

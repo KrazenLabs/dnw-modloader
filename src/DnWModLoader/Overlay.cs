@@ -1,5 +1,4 @@
 using System;
-using System.Collections.Generic;
 using System.Diagnostics;
 using System.Text;
 using DnWModLoader.Logging;
@@ -11,18 +10,15 @@ namespace DnWModLoader
     {
         private const int WindowId = 0x5D4E57;
         private const int SettingsTab = 0, ModsTab = 1, LogTab = 2;
-        private const int MaxLogLines = 120;
         private static readonly string[] Tabs = { "Settings", "Mods", "Log" };
         private static readonly string[] LogFilters = { "All", "Info+", "Warnings+", "Errors" };
-        private static readonly Color Invisible = new Color(1f, 1f, 1f, 0.004f);
 
         private readonly LoaderConfig _config;
         private readonly SettingsPanel _settings;
         private readonly OverlayHotkey _hotkey;
-        private readonly OverlayOpenDelay _openDelay;
-        private readonly OverlayWarmup _warmup = new OverlayWarmup(Tabs.Length);
         private readonly GameCursor _cursor = new GameCursor();
         private readonly float _bannerUntil;
+        private readonly bool _showDirect3D12Warning;
 
         private bool _visible;
         private int _tab = SettingsTab;
@@ -32,17 +28,17 @@ namespace DnWModLoader
         private Rect _windowRect = new Rect(40, 40, 900, 640);
 
         private bool _stylesReady;
-        private GUIStyle _bannerStyle, _bannerShadowStyle, _errorStyle, _dimStyle, _logStyle, _boxStyle, _headerStyle, _windowStyle;
+        private GUIStyle _bannerStyle, _bannerShadowStyle, _warningBannerStyle, _errorStyle, _dimStyle, _logStyle, _boxStyle, _headerStyle, _windowStyle;
         private Texture2D _windowTexture, _boxTexture;
 
         public Overlay(LoaderConfig config)
         {
             _config = config ?? new LoaderConfig();
             _hotkey = new OverlayHotkey(_config.OverlayHotkey);
-            _openDelay = new OverlayOpenDelay(() => _config.OverlayOpenDelayAfterSceneLoad);
             _settings = new SettingsPanel(_config, () => _hotkey.Set(_config.OverlayHotkey));
             _visible = _config.ShowOverlayOnStart;
             _bannerUntil = _config.ShowStartupBanner ? Time.realtimeSinceStartup + Mathf.Max(1f, _config.StartupBannerSeconds) : 0f;
+            _showDirect3D12Warning = Direct3D12Warning.Applies();
         }
 
         public bool Visible
@@ -50,12 +46,6 @@ namespace DnWModLoader
             get { return _visible; }
             set
             {
-                if (value && !_visible && _openDelay.Active)
-                {
-                    _openDelay.RequestOpen();
-                    return;
-                }
-                _openDelay.CancelRequest();
                 if (_visible == value) return;
                 _visible = value;
                 if (_visible)
@@ -72,8 +62,7 @@ namespace DnWModLoader
 
         public void Toggle()
         {
-            if (_openDelay.OpenRequested) _openDelay.CancelRequest();
-            else Visible = !Visible;
+            Visible = !Visible;
         }
 
         public void OpenSettings(string modId)
@@ -83,16 +72,9 @@ namespace DnWModLoader
             Visible = true;
         }
 
-        public void NoteSceneLoaded(string sceneName)
-        {
-            _openDelay.NoteSceneLoaded();
-            _warmup.NoteSceneLoaded(sceneName);
-        }
-
         public void Update()
         {
             if (_hotkey.PressedThisFrame() && !HotkeyBlocked) Toggle();
-            if (_openDelay.TakeDueRequest()) Visible = true;
             _cursor.KeepUnlocked();
         }
 
@@ -111,17 +93,8 @@ namespace DnWModLoader
                 Event.current.Use();
             }
 
-            if (_visible)
-            {
-                DrawWindow();
-                return;
-            }
-            if (_openDelay.OpenRequested)
-                DrawBanner("DnW Mod Loader: overlay opens in " + _openDelay.SecondsRemaining.ToString("0.0") + " s (scene is still settling; press [" + _hotkey.Name + "] again to cancel)");
-            else if (Time.realtimeSinceStartup < _bannerUntil)
-                DrawBanner(StartupBannerText());
-            int warmupFrame = _warmup.FrameDue(_visible);
-            if (warmupFrame >= 0) DrawWarmupFrame(warmupFrame);
+            if (_visible) DrawWindow();
+            else if (Time.realtimeSinceStartup < _bannerUntil) DrawStartupBanner();
         }
 
         private bool HotkeyBlocked
@@ -145,42 +118,6 @@ namespace DnWModLoader
 
         private void DrawWindowContents(int id)
         {
-            DrawContents();
-            GUI.DragWindow(new Rect(0, 0, 100000, 22));
-        }
-
-        private void DrawWarmupFrame(int frame)
-        {
-            var color = GUI.color;
-            bool enabled = GUI.enabled;
-            int tab = _tab;
-            GUI.color = Invisible;
-            GUI.enabled = false;
-            _tab = frame;   // one frame per tab
-            _settings.DrawAllRows = true;
-            var rect = new Rect(_windowRect.x, _windowRect.y, Mathf.Min(_windowRect.width, Screen.width - 20), Mathf.Min(_windowRect.height, Screen.height - 20));
-            GUILayout.BeginArea(rect, Title, _windowStyle);
-            try
-            {
-                DrawContents();
-            }
-            finally
-            {
-                GUILayout.EndArea();
-                _settings.DrawAllRows = false;
-                _tab = tab;
-                GUI.enabled = enabled;
-                GUI.color = color;
-            }
-            if (Event.current.type != EventType.Repaint) return;
-            _warmup.FrameRepainted();
-            if (_warmup.Done)
-                ModLoader.Logger.Debug("Overlay warmed up at frame " + Time.frameCount
-                    + " (settings rows " + _settings.RowsDrawn + " of " + _settings.RowsTotal + ", content " + _settings.ContentHeight.ToString("0") + " px).");
-        }
-
-        private void DrawContents()
-        {
             GUILayout.BeginHorizontal();
             ModLoader.CountStatuses(out int loaded, out int failed, out int skipped, out int disabled);
             Tabs[ModsTab] = "Mods (" + ModLoader.Mods.Count + ")";
@@ -196,7 +133,7 @@ namespace DnWModLoader
 
             switch (_tab)
             {
-                case SettingsTab: _settings.Draw(_windowRect.height - 130f); break;
+                case SettingsTab: _settings.Draw(); break;
                 case ModsTab: DrawMods(); break;
                 default: DrawLog(); break;
             }
@@ -208,6 +145,8 @@ namespace DnWModLoader
             GUILayout.FlexibleSpace();
             GUILayout.Label("Log: " + (ModLoader.LogFilePath ?? "(no file)"), _dimStyle);
             GUILayout.EndHorizontal();
+
+            GUI.DragWindow(new Rect(0, 0, 100000, 22));
         }
 
         private void DrawMods()
@@ -260,28 +199,15 @@ namespace DnWModLoader
             _logFilter = GUILayout.Toolbar(_logFilter, LogFilters, GUILayout.Width(320));
             LogLevel min = _logFilter == 0 ? LogLevel.Debug : _logFilter == 1 ? LogLevel.Info : _logFilter == 2 ? LogLevel.Warning : LogLevel.Error;
 
-            var entries = Log.GetRecent();
-            var lines = new List<string>(MaxLogLines);
-            int matching = 0;
-            for (int i = entries.Length - 1; i >= 0; i--)
-            {
-                if (entries[i].Level < min) continue;
-                matching++;
-                if (lines.Count < MaxLogLines) lines.Add(entries[i].ToString());
-            }
-            lines.Reverse();
-
             var text = new StringBuilder();
-            if (matching > lines.Count) text.Append("(").Append(matching - lines.Count).Append(" older lines omitted here; the full log is in ModLoader.log)\n");
-            foreach (var line in lines) text.Append(line).Append('\n');
-            if (lines.Count == 0) text.Append("(nothing logged at this level yet)");
+            foreach (var entry in Log.GetRecent())
+                if (entry.Level >= min) text.Append(entry).Append('\n');
+            if (text.Length == 0) text.Append("(nothing logged at this level yet)");
 
             _logScroll = GUILayout.BeginScrollView(_logScroll, GUILayout.ExpandHeight(true));
             GUILayout.Label(text.ToString(), _logStyle);
             GUILayout.EndScrollView();
         }
-
-        // ------------------------------------------------------------------ banners
 
         private string StartupBannerText()
         {
@@ -293,14 +219,18 @@ namespace DnWModLoader
             return text + "   [" + _hotkey.Name + "] settings";
         }
 
-        private void DrawBanner(string text)
+        private void DrawStartupBanner()
         {
-            var rect = new Rect(12, 8, Screen.width - 24, 24);
-            GUI.Label(new Rect(rect.x + 1, rect.y + 1, rect.width, rect.height), text, _bannerShadowStyle);
-            GUI.Label(rect, text, _bannerStyle);
+            DrawBanner(0, StartupBannerText(), _bannerStyle);
+            if (_showDirect3D12Warning) DrawBanner(1, Direct3D12Warning.Banner, _warningBannerStyle);
         }
 
-        // ------------------------------------------------------------------ actions
+        private void DrawBanner(int line, string text, GUIStyle style)
+        {
+            var rect = new Rect(12, 8 + line * 22, Screen.width - 24, 24);
+            GUI.Label(new Rect(rect.x + 1, rect.y + 1, rect.width, rect.height), text, _bannerShadowStyle);
+            GUI.Label(rect, text, style);
+        }
 
         private static void ReloadConfigs()
         {
@@ -320,8 +250,6 @@ namespace DnWModLoader
             catch (Exception e) { ModLoader.Logger.Warning("Could not open " + path + ": " + e.Message); }
         }
 
-        // ------------------------------------------------------------------ styles
-
         private void EnsureStyles()
         {
             if (_stylesReady) return;
@@ -337,6 +265,8 @@ namespace DnWModLoader
             _bannerStyle.normal.textColor = new Color(1f, 0.92f, 0.55f);
             _bannerShadowStyle = new GUIStyle(_bannerStyle);
             _bannerShadowStyle.normal.textColor = new Color(0f, 0f, 0f, 0.85f);
+            _warningBannerStyle = new GUIStyle(_bannerStyle);
+            _warningBannerStyle.normal.textColor = new Color(1f, 0.6f, 0.45f);
             _errorStyle = new GUIStyle(GUI.skin.label) { wordWrap = true };
             _errorStyle.normal.textColor = new Color(1f, 0.45f, 0.4f);
             _dimStyle = new GUIStyle(GUI.skin.label) { wordWrap = true };
