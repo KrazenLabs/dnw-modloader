@@ -1,3 +1,5 @@
+![DnW Mod Loader](https://github.com/KrazenLabs/dnw-modloader/blob/main/assets/logo.png)
+
 # DnW Mod Loader
 
 A mod loader for **Drag'n Wash** (Gator Dragon Games; Unity 6000.3).
