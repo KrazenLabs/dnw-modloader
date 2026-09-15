@@ -16,6 +16,17 @@ namespace DnWModLoader
             catch (Exception e) { EmergencyLog(e); }
         }
 
+        private static bool _afterRegistrationCalled;
+
+        // BepInEx plugins
+        public static void AfterRegistration()
+        {
+            if (_afterRegistrationCalled || !_initCalled) return;
+            _afterRegistrationCalled = true;
+            try { ModLoader.AfterRegistration(); }
+            catch (Exception e) { EmergencyLog(e); }
+        }
+
         private static void EmergencyLog(Exception e)
         {
             string text = "[DnW] Bootstrap.Init failed: " + e;

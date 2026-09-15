@@ -18,7 +18,17 @@ https://github.com/NeighTools/UnityDoorstop
 Shipped as an unmodified binary. It is loaded by Windows in place of the system winhttp.dll, forwards the real
 functions, and runs `DnWModLoader.dll` after the Mono runtime starts. See `DOORSTOP-NOTICE.txt` next to it.
 
-## Mono.Cecil 0.11.6 — used by the Doorstop preloader
+## BepInEx 5 plugin API — `BepInEx.dll`
+
+`BepInEx.dll` in the loader folder is not BepInEx. It is the DnW Mod Loader's own implementation of the public API of
+BepInEx 5.4 (`BepInEx`, `BepInEx.Configuration`, `BepInEx.Logging`, `BepInEx.Bootstrap`), named so that BepInEx 5
+plugins load without BepInEx, and it reads and writes settings in BepInEx's `.cfg` format. No BepInEx code is included.
+BepInEx is by the BepInEx contributors, GNU Lesser General Public License v2.1, https://github.com/BepInEx/BepInEx.
+
+HarmonyX (MIT License, https://github.com/BepInEx/HarmonyX) is not included either: calls to HarmonyX-only members in
+plugins are redirected to equivalents built on Harmony.
+
+## Mono.Cecil 0.11.6 — used by the Doorstop preloader and to load BepInEx plugins
 
 Copyright (c) 2008 - 2015 Jb Evain, Copyright (c) 2008 - 2011 Novell, Inc. MIT License.
 https://github.com/jbevain/cecil

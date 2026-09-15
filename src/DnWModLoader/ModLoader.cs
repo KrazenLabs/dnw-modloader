@@ -4,6 +4,7 @@ using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using System.Reflection;
+using System.Runtime.CompilerServices;
 using DnWModLoader.Config;
 using DnWModLoader.Logging;
 using UnityEngine;
@@ -22,9 +23,9 @@ namespace DnWModLoader
 
     public static class ModLoader
     {
-        public const string Version = "1.4.0";
+        public const string Version = "1.5.0";
 
-        public static readonly Version ParsedVersion = new Version(1, 4, 0);
+        public static readonly Version ParsedVersion = new Version(1, 5, 0);
 
         public const string ModsFolderName = "Mods";
         public const string ConfigFolderName = "config";
@@ -138,15 +139,34 @@ namespace DnWModLoader
                 Logger.Exception(e, "Mod discovery failed");
             }
 
+            try
+            {
+                _bepInExPluginsFound = HasBepInExPlugins();
+                if (_bepInExPluginsFound) DiscoverBepInExPlugins();
+            }
+            catch (Exception e)
+            {
+                Logger.Exception(e, "BepInEx plugin discovery failed");
+            }
+
             Phase = LoaderPhase.Initialized;
             CountStatuses(out int loaded, out int failed, out int skipped, out int disabled);
-            Logger.Info("Initialization finished in " + stopwatch.ElapsedMilliseconds + " ms: " + loaded + " loaded, " + failed + " failed, " + skipped + " skipped, " + disabled + " disabled.");
+            int waiting = ModList.Count(c => c.Framework != null && c.Status == ModStatus.Discovered);
+            Logger.Info("Initialization finished in " + stopwatch.ElapsedMilliseconds + " ms: " + loaded + " loaded, " + failed + " failed, " + skipped + " skipped, " + disabled + " disabled"
+                        + (waiting > 0 ? ", " + waiting + " BepInEx plugin(s) found." : "."));
 
             try { ModsInitialized?.Invoke(); }
             catch (Exception e) { Logger.Exception(e, "ModsInitialized exception"); }
 
             HookSceneEvents();
             EnsureBehaviour("SubsystemRegistration");
+
+            if (!Preloader.AfterRegistrationHooked) StartBepInExPlugins("SubsystemRegistration");
+        }
+
+        internal static void AfterRegistration()
+        {
+            StartBepInExPlugins(Preloader.AfterRegistrationPhase ?? "a later initializer");
         }
 
         internal static void GameStarted()
@@ -328,7 +348,68 @@ namespace DnWModLoader
             public string DiscoveryError;
         }
 
-        private static readonly string[] ReservedDllNames = { "DnWModLoader.dll", "0Harmony.dll" };
+        private static readonly string[] ReservedDllNames = { "DnWModLoader.dll", "0Harmony.dll", "BepInEx.dll" };
+
+        // BepInEx plugins within Mods folder
+        private static readonly List<string> ModsFolderBepInExPlugins = new List<string>();
+        // BepInEx.dll is only loaded when there are plugins
+        private static bool _bepInExPluginsFound;
+
+        private static bool HasBepInExPlugins()
+        {
+            string plugins = Path.Combine(Path.Combine(GameDirectory, "BepInEx"), "plugins");
+            return ModsFolderBepInExPlugins.Count > 0 || (Directory.Exists(plugins) && Directory.GetFiles(plugins, "*.dll", SearchOption.AllDirectories).Length > 0);
+        }
+
+        // In case BepInEx.dll is missing
+        [MethodImpl(MethodImplOptions.NoInlining)]
+        private static void DiscoverBepInExPlugins()
+        {
+            BepInExCompat.BepInExHost.Discover(ModsFolderBepInExPlugins);
+        }
+
+        private static void StartBepInExPlugins(string phase)
+        {
+            if (!_bepInExPluginsFound) return;
+            try { StartBepInExPluginsCore(phase); }
+            catch (Exception e) { Logger.Exception(e, "Starting BepInEx plugins failed"); }
+        }
+
+        [MethodImpl(MethodImplOptions.NoInlining)]
+        private static void StartBepInExPluginsCore(string phase)
+        {
+            BepInExCompat.BepInExHost.Start(phase);
+        }
+
+        internal static void AddExternalMod(ModContainer container)
+        {
+            ModList.Add(container);
+        }
+
+        internal static bool ClaimModId(ModContainer container, out string owner)
+        {
+            owner = null;
+            if (ModsById.TryGetValue(container.Info.Id, out var existing))
+            {
+                owner = existing.Info.ToString();
+                return false;
+            }
+            ModsById[container.Info.Id] = container;
+            return true;
+        }
+
+        private static bool ReferencesBepInEx(string path)
+        {
+            try
+            {
+                using (var module = Mono.Cecil.ModuleDefinition.ReadModule(path, new Mono.Cecil.ReaderParameters { ReadingMode = Mono.Cecil.ReadingMode.Deferred }))
+                    return module.AssemblyReferences.Any(r => r.Name == "BepInEx");
+            }
+            catch
+            {
+                return false;
+            }
+        }
 
         private static void DiscoverAndLoadMods()
         {
@@ -444,6 +525,7 @@ namespace DnWModLoader
                 foreach (var dll in dlls.OrderBy(d => d, StringComparer.OrdinalIgnoreCase))
                 {
                     if (IsReservedDll(dll)) continue;
+                    if (ReferencesBepInEx(dll)) { ModsFolderBepInExPlugins.Add(dll); continue; }
                     result.Add(new Candidate { Directory = dir, AssemblyPath = dll, IsBare = true });
                 }
             }
@@ -451,6 +533,7 @@ namespace DnWModLoader
             foreach (var dll in SafeGetFiles(ModsDirectory, "*.dll").OrderBy(d => d, StringComparer.OrdinalIgnoreCase))
             {
                 if (IsReservedDll(dll)) continue;
+                if (ReferencesBepInEx(dll)) { ModsFolderBepInExPlugins.Add(dll); continue; }
                 result.Add(new Candidate { Directory = ModsDirectory, AssemblyPath = dll, IsBare = true });
             }
             return result;
@@ -740,6 +823,7 @@ namespace DnWModLoader
                 instance.Logger = new ModLogger(info.Id);
                 instance.Config = new ModConfig(Path.Combine(ConfigDirectory, info.Id + ".json"), instance.Logger);
                 container.Instance = instance;
+                container.Settings = instance.Config;
 
                 instance.OnInitialize();
 

@@ -213,10 +213,11 @@ namespace DnWModLoader
             GUILayout.BeginVertical(_boxStyle);
             GUILayout.BeginHorizontal();
             string title = (info != null ? info.Name + "  " + info.VersionString : "?") + "   [" + mod.Status + "]";
+            if (mod.Framework != null) title += "   " + mod.Framework + " plugin";
             if (info != null && !string.IsNullOrEmpty(info.Author)) title += "   by " + info.Author;
             GUILayout.Label(title, mod.Status == ModStatus.Failed || mod.Status == ModStatus.Skipped ? _errorStyle : _headerStyle);
             GUILayout.FlexibleSpace();
-            if (mod.Status == ModStatus.Loaded && mod.Instance?.Config != null && mod.Instance.Config.Entries.Count > 0)
+            if (mod.Status == ModStatus.Loaded && mod.Settings != null && mod.Settings.HasEntries)
             {
                 if (GUILayout.Button("Settings", GUILayout.Width(70))) OpenSettings(info.Id);
             }
@@ -285,8 +286,8 @@ namespace DnWModLoader
         {
             foreach (var mod in ModLoader.Mods)
             {
-                if (mod.Status != ModStatus.Loaded || mod.Instance == null) continue;
-                try { mod.Instance.Config.Reload(); }
+                if (mod.Status != ModStatus.Loaded || mod.Settings == null) continue;
+                try { mod.Settings.Reload(); }
                 catch (Exception e) { ModLoader.Logger.Exception(e, "Reloading config of " + mod.Info.Id + " failed"); }
             }
             ModLoader.Logger.Info("Mod configs reloaded.");

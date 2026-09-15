@@ -1,3 +1,4 @@
+﻿
 Microsoft Visual Studio Solution File, Format Version 12.00
 # Visual Studio Version 17
 VisualStudioVersion = 17.0.31903.59
@@ -9,6 +10,8 @@ EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "ExampleMod", "src\mods\ExampleMod\ExampleMod.csproj", "{F30E715E-CFBE-49F5-B88F-5EF91F87B38A}"
 EndProject
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "mods", "mods", "{6CBF7830-87DE-CF53-6AE2-32113C1FBCA9}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "BepInEx.Compat", "src\BepInEx.Compat\BepInEx.Compat.csproj", "{037AA41C-D5ED-44B0-86C3-0FA4F1A63E7B}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
@@ -44,6 +47,18 @@ Global
 		{F30E715E-CFBE-49F5-B88F-5EF91F87B38A}.Release|x64.Build.0 = Release|Any CPU
 		{F30E715E-CFBE-49F5-B88F-5EF91F87B38A}.Release|x86.ActiveCfg = Release|Any CPU
 		{F30E715E-CFBE-49F5-B88F-5EF91F87B38A}.Release|x86.Build.0 = Release|Any CPU
+		{037AA41C-D5ED-44B0-86C3-0FA4F1A63E7B}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{037AA41C-D5ED-44B0-86C3-0FA4F1A63E7B}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{037AA41C-D5ED-44B0-86C3-0FA4F1A63E7B}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{037AA41C-D5ED-44B0-86C3-0FA4F1A63E7B}.Debug|x64.Build.0 = Debug|Any CPU
+		{037AA41C-D5ED-44B0-86C3-0FA4F1A63E7B}.Debug|x86.ActiveCfg = Debug|Any CPU
+		{037AA41C-D5ED-44B0-86C3-0FA4F1A63E7B}.Debug|x86.Build.0 = Debug|Any CPU
+		{037AA41C-D5ED-44B0-86C3-0FA4F1A63E7B}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{037AA41C-D5ED-44B0-86C3-0FA4F1A63E7B}.Release|Any CPU.Build.0 = Release|Any CPU
+		{037AA41C-D5ED-44B0-86C3-0FA4F1A63E7B}.Release|x64.ActiveCfg = Release|Any CPU
+		{037AA41C-D5ED-44B0-86C3-0FA4F1A63E7B}.Release|x64.Build.0 = Release|Any CPU
+		{037AA41C-D5ED-44B0-86C3-0FA4F1A63E7B}.Release|x86.ActiveCfg = Release|Any CPU
+		{037AA41C-D5ED-44B0-86C3-0FA4F1A63E7B}.Release|x86.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
@@ -52,5 +67,6 @@ Global
 		{898DB104-3E72-4258-9F43-05886D4D3F36} = {827E0CD3-B72D-47B6-A68D-7590B98EB39B}
 		{F30E715E-CFBE-49F5-B88F-5EF91F87B38A} = {827E0CD3-B72D-47B6-A68D-7590B98EB39B}
 		{6CBF7830-87DE-CF53-6AE2-32113C1FBCA9} = {827E0CD3-B72D-47B6-A68D-7590B98EB39B}
+		{037AA41C-D5ED-44B0-86C3-0FA4F1A63E7B} = {827E0CD3-B72D-47B6-A68D-7590B98EB39B}
 	EndGlobalSection
 EndGlobal

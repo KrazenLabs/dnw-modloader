@@ -41,6 +41,17 @@ namespace DnWModLoader.Config
         public bool HasRange { get { return Min.HasValue && Max.HasValue && Max.Value > Min.Value; } }
     }
 
+    internal interface ISettingsSource
+    {
+        bool HasPendingChanges { get; }
+        bool HasEntries { get; }
+        IList<KeyValuePair<string, List<ConfigEntryBase>>> EntriesBySection();
+        SectionInfo GetSectionInfo(string section);
+        void ResetSection(string section);
+        void ResetAll();
+        void Reload();
+    }
+
     // Config sections
     public sealed class SectionInfo
     {
@@ -242,7 +253,7 @@ namespace DnWModLoader.Config
     }
 
     // Per mod config
-    public sealed class ModConfig
+    public sealed class ModConfig : ISettingsSource
     {
         internal static readonly JsonSerializerSettings SerializerSettings = CreateSettings();
         internal static readonly JsonSerializer Serializer = JsonSerializer.Create(SerializerSettings);
@@ -273,6 +284,8 @@ namespace DnWModLoader.Config
         public IReadOnlyList<ConfigEntryBase> Entries { get { lock (_sync) return _ordered.ToArray(); } }
 
         public bool HasPendingChanges { get { return _dirty; } }
+
+        bool ISettingsSource.HasEntries { get { lock (_sync) return _ordered.Count > 0; } }
 
         internal ModConfig(string filePath, ModLogger logger)
         {

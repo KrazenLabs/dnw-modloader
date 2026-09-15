@@ -65,7 +65,7 @@ Write-Host "Building $version ($Configuration) against $GameDir ..." -Foreground
 if ($LASTEXITCODE -ne 0) { throw "dotnet build failed with exit code $LASTEXITCODE" }
 
 $loaderBin = Join-Path $root "src\DnWModLoader\bin\$Configuration"
-$loaderFiles = @("DnWModLoader.dll", "DnWModLoader.pdb", "DnWModLoader.xml", "0Harmony.dll", "Mono.Cecil.dll")
+$loaderFiles = @("DnWModLoader.dll", "DnWModLoader.pdb", "DnWModLoader.xml", "BepInEx.dll", "BepInEx.pdb", "0Harmony.dll", "Mono.Cecil.dll")
 $docs = @("README.md", "THIRD-PARTY-NOTICES.md", "LICENSE")
 $mods = @("ExampleMod")
 

@@ -139,6 +139,9 @@ namespace DnWModLoader
         public Exception Exception { get; internal set; }
         public int PatchedMethodCount { get; internal set; }
         public double InitializeMilliseconds { get; internal set; }
+        // null for DnW mods, "BepInEx" for BepInEx plugins
+        public string Framework { get; internal set; }
+        internal ISettingsSource Settings { get; set; }
 
         internal bool CallbacksEnabled { get { return Status == ModStatus.Loaded && Instance != null; } }
 

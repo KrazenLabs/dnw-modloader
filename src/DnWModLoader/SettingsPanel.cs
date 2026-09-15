@@ -92,8 +92,8 @@ namespace DnWModLoader
 
         private bool DrawMod(ModContainer mod, string filter)
         {
-            if (mod.Status != ModStatus.Loaded || mod.Instance == null || mod.Instance.Config == null) return false;
-            var config = mod.Instance.Config;
+            if (mod.Status != ModStatus.Loaded || mod.Settings == null) return false;
+            var config = mod.Settings;
             var sections = VisibleSections(config, mod.Info, filter);
             if (sections.Count == 0) return false;
 
@@ -115,7 +115,7 @@ namespace DnWModLoader
             return true;
         }
 
-        private List<KeyValuePair<string, List<ConfigEntryBase>>> VisibleSections(ModConfig config, ModInfo info, string filter)
+        private List<KeyValuePair<string, List<ConfigEntryBase>>> VisibleSections(ISettingsSource config, ModInfo info, string filter)
         {
             var result = new List<KeyValuePair<string, List<ConfigEntryBase>>>();
             bool filtering = filter.Length > 0;
@@ -138,7 +138,7 @@ namespace DnWModLoader
             return result;
         }
 
-        private void DrawSection(string modId, ModConfig config, string sectionKey, List<ConfigEntryBase> entries)
+        private void DrawSection(string modId, ISettingsSource config, string sectionKey, List<ConfigEntryBase> entries)
         {
             var info = config.GetSectionInfo(sectionKey);
             GUILayout.Space(4);
@@ -193,7 +193,8 @@ namespace DnWModLoader
         {
             var type = ValueType(entry);
             if (type == typeof(bool)) return Widget.Toggle;
-            if (type.IsEnum || (entry.Meta.AcceptableValues != null && entry.Meta.AcceptableValues.Length > 0)) return Widget.Choice;
+            // Flag combinations are typed as text, e.g. "Warning, Error"
+            if ((type.IsEnum && !type.IsDefined(typeof(FlagsAttribute), false)) || (entry.Meta.AcceptableValues != null && entry.Meta.AcceptableValues.Length > 0)) return Widget.Choice;
             if (ConfigEntryBase.IsNumericType(type) && entry.Meta.HasRange) return Widget.Slider;
             return Widget.Text;
         }
@@ -206,7 +207,8 @@ namespace DnWModLoader
         private static Array Choices(ConfigEntryBase entry)
         {
             var type = ValueType(entry);
-            return type.IsEnum ? Enum.GetValues(type) : entry.Meta.AcceptableValues;
+            if (entry.Meta.AcceptableValues != null && entry.Meta.AcceptableValues.Length > 0) return entry.Meta.AcceptableValues;
+            return Enum.GetValues(type);
         }
 
         private static void DrawToggle(ConfigEntryBase entry)

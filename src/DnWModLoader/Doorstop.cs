@@ -27,6 +27,9 @@ namespace DnWModLoader
         // True when Doorstop invoked the entry point (whether or not patching succeeded)
         public static bool Invoked { get; private set; }
         public static string Status { get; private set; } = "not started by Doorstop";
+        // True when Bootstrap.AfterRegistration was hooked
+        public static bool AfterRegistrationHooked { get; private set; }
+        public static string AfterRegistrationPhase { get; private set; }
         public static string LoaderDirectory { get; private set; }
         public static string GameDirectory { get; private set; }
         public static string ManagedDirectory { get; private set; }
@@ -63,11 +66,13 @@ namespace DnWModLoader
                 string gameAssembly = Path.Combine(ManagedDirectory, "Assembly-CSharp.dll");
                 if (!File.Exists(gameAssembly)) throw new FileNotFoundException("game assembly not found", gameAssembly);
 
-                byte[] patched = AssemblyPatcher.Patch(File.ReadAllBytes(gameAssembly), ManagedDirectory, dllPath, out string target);
+                byte[] patched = AssemblyPatcher.Patch(File.ReadAllBytes(gameAssembly), ManagedDirectory, dllPath, out string target, out string lateTarget, out string latePhase);
                 Assembly.Load(patched);
                 Active = true;
-                Status = "in-memory patch of Assembly-CSharp.dll, hooked " + target;
-                Note("Preloaded patched Assembly-CSharp.dll (" + patched.Length + " bytes), hooked " + target + ".");
+                AfterRegistrationHooked = lateTarget != null;
+                AfterRegistrationPhase = latePhase;
+                Status = "in-memory patch of Assembly-CSharp.dll, hooked " + target + (lateTarget != null ? " and " + lateTarget : "");
+                Note("Preloaded patched Assembly-CSharp.dll (" + patched.Length + " bytes), hooked " + target + (lateTarget != null ? " and " + lateTarget + " (" + latePhase + ")" : "") + ".");
             }
             catch (Exception e)
             {

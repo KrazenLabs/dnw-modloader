@@ -29,6 +29,14 @@ Drag'n Wash/
     └── ModLoader.log          <- log of the last launch
 ```
 
+## BepInEx plugins (experimental)
+
+The loader can also run BepInEx 5 plugins through a compatibility layer.
+
+- Install the plugin as you would normally with BepInEx (usually: extract its zip into the game folder, so the DLL ends up in `BepInEx/plugins`).
+- Do not install BepInEx! (make sure the plugin does not bundle it)
+- HarmonyX IL manipulators, BepInEx preloader patchers and BepInEx 6 plugins are currently not supported.
+
 ## Uninstall
 
 Delete `winhttp.dll` and `doorstop_config.ini`.
@@ -77,4 +85,4 @@ Check out the included "ExampleMod" for an example of a simple mod that displays
 
 ## Known issues
 
-Direct3D 12 can cause random crashes during UI start. Please use the -force-d3d11 launch options to launch the game in Direct3D 11.
+Direct3D 12 can cause random crashes during UI start. Please use the -force-d3d11 launch options to launch the game in Direct3D 11. This is a Unity bug, so not much I can do about it :(

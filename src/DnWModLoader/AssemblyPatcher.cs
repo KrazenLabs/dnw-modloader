@@ -12,10 +12,15 @@ namespace DnWModLoader
         private const string LoaderAssemblyName = "DnWModLoader";
         private const string BootstrapTypeName = "DnWModLoader.Bootstrap";
         private const string BootstrapMethodName = "Init";
+        private const string LateMethodName = "AfterRegistration";
         private const int SubsystemRegistration = 4;
 
-        // Returns the patched assembly bytes and a description of the method that now calls the loader
-        public static byte[] Patch(byte[] original, string managedDir, string loaderDllPath, out string targetDescription)
+        // Phases after SubsystemRegistration, in the order Unity runs them
+        private static readonly int[] LatePhases = { 2, 3, 1 };
+        private static readonly string[] LatePhaseNames = { "AfterAssembliesLoaded", "BeforeSplashScreen", "BeforeSceneLoad" };
+
+        // Returns patched assembly bytes and descriptions of methods
+        public static byte[] Patch(byte[] original, string managedDir, string loaderDllPath, out string targetDescription, out string lateTargetDescription, out string latePhase)
         {
             using (var resolver = CreateResolver(managedDir))
             using (var assembly = AssemblyDefinition.ReadAssembly(new MemoryStream(original), new ReaderParameters { AssemblyResolver = resolver, InMemory = true, ReadingMode = ReadingMode.Immediate }))
@@ -30,11 +35,19 @@ namespace DnWModLoader
                            ?? throw new InvalidOperationException(BootstrapTypeName + "." + BootstrapMethodName + "() not found in the loader assembly.");
 
                 var target = FindTarget(module) ?? throw new InvalidOperationException("No static [RuntimeInitializeOnLoadMethod(SubsystemRegistration)] method found in Assembly-CSharp.dll to hook.");
-                var initRef = module.ImportReference(init);
-                var il = target.Body.GetILProcessor();
-                il.InsertBefore(target.Body.Instructions[0], il.Create(OpCodes.Call, initRef));
-
+                InsertCall(module, target, init);
                 targetDescription = target.DeclaringType.FullName + "." + target.Name;
+
+                // Optional second hook, for BepInEx plugins
+                lateTargetDescription = null;
+                latePhase = null;
+                var late = bootstrap.Methods.FirstOrDefault(m => m.Name == LateMethodName && m.IsStatic && m.IsPublic && !m.HasParameters);
+                if (late != null && FindLateTarget(module, out var lateTarget, out latePhase))
+                {
+                    InsertCall(module, lateTarget, late);
+                    lateTargetDescription = lateTarget.DeclaringType.FullName + "." + lateTarget.Name;
+                }
+
                 using (var output = new MemoryStream())
                 {
                     assembly.Write(output);
@@ -43,9 +56,14 @@ namespace DnWModLoader
             }
         }
 
-        private static MethodDefinition FindTarget(ModuleDefinition module)
+        private static void InsertCall(ModuleDefinition module, MethodDefinition target, MethodDefinition callee)
         {
-            var candidates = new List<MethodDefinition>();
+            var il = target.Body.GetILProcessor();
+            il.InsertBefore(target.Body.Instructions[0], il.Create(OpCodes.Call, module.ImportReference(callee)));
+        }
+
+        private static IEnumerable<KeyValuePair<MethodDefinition, int>> InitializeOnLoadMethods(ModuleDefinition module)
+        {
             foreach (var type in module.Types)
             {
                 foreach (var method in type.Methods)
@@ -54,12 +72,33 @@ namespace DnWModLoader
                     var attribute = method.CustomAttributes.FirstOrDefault(a => a.AttributeType.Name == "RuntimeInitializeOnLoadMethodAttribute");
                     if (attribute == null) continue;
                     int loadType = attribute.ConstructorArguments.Count == 1 && attribute.ConstructorArguments[0].Value is int value ? value : 0;
-                    if (loadType == SubsystemRegistration) candidates.Add(method);
+                    yield return new KeyValuePair<MethodDefinition, int>(method, loadType);
                 }
             }
+        }
 
+        private static MethodDefinition FindTarget(ModuleDefinition module)
+        {
+            var candidates = InitializeOnLoadMethods(module).Where(m => m.Value == SubsystemRegistration).Select(m => m.Key).ToList();
             return candidates.FirstOrDefault(m => m.DeclaringType.Name == "GameStateManager" && m.Name == "Init")
                    ?? candidates.OrderBy(m => m.DeclaringType.FullName, StringComparer.Ordinal).ThenBy(m => m.Name, StringComparer.Ordinal).FirstOrDefault();
+        }
+
+        // The earliest method that runs after all SubsystemRegistration methods
+        private static bool FindLateTarget(ModuleDefinition module, out MethodDefinition target, out string phase)
+        {
+            var methods = InitializeOnLoadMethods(module).ToList();
+            for (int i = 0; i < LatePhases.Length; i++)
+            {
+                target = methods.Where(m => m.Value == LatePhases[i]).Select(m => m.Key)
+                    .OrderBy(m => m.DeclaringType.FullName, StringComparer.Ordinal).ThenBy(m => m.Name, StringComparer.Ordinal).FirstOrDefault();
+                if (target == null) continue;
+                phase = LatePhaseNames[i];
+                return true;
+            }
+            target = null;
+            phase = null;
+            return false;
         }
 
         private static DefaultAssemblyResolver CreateResolver(string managedDir)
