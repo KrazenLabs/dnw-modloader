@@ -28,6 +28,8 @@ namespace DnWModLoader
             _started = true;
             try { ModLoader.GameStarted(); }
             catch (Exception e) { ModLoader.Logger.Exception(e, "Game start phase failed"); }
+            try { if (ModLoader.Config != null && ModLoader.Config.CheckForUpdates) UpdateChecker.Begin(); }
+            catch (Exception e) { ModLoader.Logger.Exception(e, "Update check could not start"); }
             ModLoader.Logger.Debug("Runtime behaviour started (frame " + Time.frameCount + ", scene " + UnityEngine.SceneManagement.SceneManager.GetActiveScene().name + "); per-frame callbacks are live.");
         }
 

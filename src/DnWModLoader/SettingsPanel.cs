@@ -99,7 +99,7 @@ namespace DnWModLoader
 
             string modId = mod.Info.Id;
             bool filtering = filter.Length > 0;
-            bool expanded = filtering || IsExpanded(modId, true);
+            bool expanded = filtering || IsExpanded(modId, false);
 
             GUILayout.BeginVertical(_box);
             GUILayout.BeginHorizontal();
@@ -293,7 +293,7 @@ namespace DnWModLoader
         private bool DrawLoaderSettings(string filter)
         {
             bool filtering = filter.Length > 0;
-            if (filtering && !Matches(filter, "Mod Loader", "loader", "overlay", "hotkey", "log", "banner")) return false;
+            if (filtering && !Matches(filter, "Mod Loader", "loader", "overlay", "hotkey", "log", "banner", "updates")) return false;
             bool expanded = filtering || IsExpanded(LoaderId, false);
 
             GUILayout.BeginVertical(_box);
@@ -333,6 +333,20 @@ namespace DnWModLoader
             GUILayout.Label("Open overlay on start", GUILayout.Width(LabelWidth));
             bool onStart = GUILayout.Toggle(c.ShowOverlayOnStart, c.ShowOverlayOnStart ? " on" : " off", GUILayout.Width(60));
             if (onStart != c.ShowOverlayOnStart) { c.ShowOverlayOnStart = onStart; changed = true; }
+            GUILayout.EndHorizontal();
+
+            GUILayout.BeginHorizontal();
+            GUILayout.Label("Check for updates", GUILayout.Width(LabelWidth));
+            bool updates = GUILayout.Toggle(c.CheckForUpdates, c.CheckForUpdates ? " on" : " off", GUILayout.Width(60));
+            if (updates != c.CheckForUpdates)
+            {
+                c.CheckForUpdates = updates;
+                changed = true;
+                if (updates) UpdateChecker.Begin();
+            }
+            GUILayout.Label(UpdateChecker.Status, _small, GUILayout.ExpandWidth(false));
+            if (UpdateChecker.UpdateAvailable && GUILayout.Button("Release page", GUILayout.Width(95))) UpdateChecker.OpenReleasePage();
+            GUILayout.FlexibleSpace();
             GUILayout.EndHorizontal();
 
             GUILayout.BeginHorizontal();

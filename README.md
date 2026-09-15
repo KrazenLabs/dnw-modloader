@@ -17,9 +17,9 @@ The structure should look like this after installation:
 ```
 Drag'n Wash/
 ├── DragNWash.exe
-├── winhttp.dll                <- UnityDoorstop: starts the loader with the game
+├── winhttp.dll
 ├── doorstop_config.ini
-├── DnWModLoader/              <- the loader runtime: DnWModLoader.dll, 0Harmony.dll, Mono.Cecil.dll, docs/
+├── DnWModLoader/              <- the loader runtime
 └── Mods/                      <- your mods go here
     ├── ExampleMod/
     │   ├── ExampleMod.dll

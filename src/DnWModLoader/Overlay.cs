@@ -9,9 +9,12 @@ namespace DnWModLoader
     internal sealed class Overlay
     {
         private const int WindowId = 0x5D4E57;
+        private const int UpdateNoticeId = WindowId + 1;
         private const int SettingsTab = 0, ModsTab = 1, LogTab = 2;
         private static readonly string[] Tabs = { "Settings", "Mods", "Log" };
         private static readonly string[] LogFilters = { "All", "Info+", "Warnings+", "Errors" };
+
+        private enum NoticeState { Pending, Showing, Done }
 
         private readonly LoaderConfig _config;
         private readonly SettingsPanel _settings;
@@ -26,10 +29,11 @@ namespace DnWModLoader
         private Vector2 _modsScroll;
         private Vector2 _logScroll;
         private Rect _windowRect = new Rect(40, 40, 900, 640);
+        private NoticeState _updateNotice;
 
         private bool _stylesReady;
-        private GUIStyle _bannerStyle, _bannerShadowStyle, _warningBannerStyle, _errorStyle, _dimStyle, _logStyle, _boxStyle, _headerStyle, _windowStyle;
-        private Texture2D _windowTexture, _boxTexture;
+        private GUIStyle _bannerStyle, _bannerShadowStyle, _warningBannerStyle, _errorStyle, _dimStyle, _logStyle, _boxStyle, _headerStyle, _windowStyle, _noticeStyle, _linkStyle;
+        private Texture2D _windowTexture, _boxTexture, _noticeTexture;
 
         public Overlay(LoaderConfig config)
         {
@@ -56,6 +60,7 @@ namespace DnWModLoader
                 {
                     _cursor.Restore();
                     GUI.FocusControl(null);
+                    if (_updateNotice == NoticeState.Showing) _updateNotice = NoticeState.Done;
                 }
             }
         }
@@ -93,7 +98,11 @@ namespace DnWModLoader
                 Event.current.Use();
             }
 
-            if (_visible) DrawWindow();
+            if (_visible)
+            {
+                DrawWindow();
+                DrawUpdateNotice();
+            }
             else if (Time.realtimeSinceStartup < _bannerUntil) DrawStartupBanner();
         }
 
@@ -147,6 +156,46 @@ namespace DnWModLoader
             GUILayout.EndHorizontal();
 
             GUI.DragWindow(new Rect(0, 0, 100000, 22));
+        }
+
+        private void DrawUpdateNotice()
+        {
+            if (_updateNotice == NoticeState.Pending && UpdateChecker.UpdateAvailable) _updateNotice = NoticeState.Showing;
+            if (_updateNotice != NoticeState.Showing) return;
+
+            float width = Mathf.Min(560f, Screen.width - 20f), height = 132f;
+            float x = Mathf.Clamp(_windowRect.center.x - width / 2f, 0f, Mathf.Max(0f, Screen.width - width));
+            float y = Mathf.Clamp(_windowRect.center.y - height / 2f, 0f, Mathf.Max(0f, Screen.height - height));
+            GUI.ModalWindow(UpdateNoticeId, new Rect(x, y, width, height), DrawUpdateNoticeContents, "Update available", _noticeStyle);
+        }
+
+        private void DrawUpdateNoticeContents(int id)
+        {
+            GUILayout.Label("A newer DnW Mod Loader version (" + UpdateChecker.LatestVersion + ") is available.", _headerStyle);
+            GUILayout.Label("Please download the update from the release page.", _dimStyle);
+            GUILayout.Space(4);
+            if (Link(UpdateChecker.ReleaseUrl))
+            {
+                UpdateChecker.OpenReleasePage();
+                _updateNotice = NoticeState.Done;
+            }
+            GUILayout.FlexibleSpace();
+            GUILayout.BeginHorizontal();
+            GUILayout.FlexibleSpace();
+            if (GUILayout.Button("Close", GUILayout.Width(80))) _updateNotice = NoticeState.Done;
+            GUILayout.EndHorizontal();
+        }
+
+        private bool Link(string text)
+        {
+            var content = new GUIContent(text);
+            var rect = GUILayoutUtility.GetRect(content, _linkStyle, GUILayout.ExpandWidth(false));
+            var previous = GUI.color;
+            GUI.color = rect.Contains(Event.current.mousePosition) ? new Color(0.75f, 0.87f, 1f) : new Color(0.45f, 0.7f, 1f);
+            bool clicked = GUI.Button(rect, content, _linkStyle);
+            GUI.DrawTexture(new Rect(rect.x + _linkStyle.padding.left, rect.yMax - _linkStyle.padding.bottom, rect.width - _linkStyle.padding.horizontal, 1f), Texture2D.whiteTexture);
+            GUI.color = previous;
+            return clicked;
         }
 
         private void DrawMods()
@@ -277,12 +326,35 @@ namespace DnWModLoader
             _boxStyle.normal.background = _boxTexture;
             _headerStyle = new GUIStyle(GUI.skin.label) { fontStyle = FontStyle.Bold };
             _headerStyle.normal.textColor = Color.white;
+            _noticeTexture = MakeFramedTexture(new Color(0.13f, 0.13f, 0.16f, 0.98f), new Color(1f, 0.8f, 0.35f));
+            _noticeStyle = new GUIStyle(_windowStyle) { border = new RectOffset(1, 1, 1, 1), overflow = new RectOffset(), fontStyle = FontStyle.Bold };
+            _noticeStyle.normal.background = _noticeTexture;
+            _noticeStyle.onNormal.background = _noticeTexture;
+            _noticeStyle.normal.textColor = _bannerStyle.normal.textColor;
+            _noticeStyle.onNormal.textColor = _bannerStyle.normal.textColor;
+            // Tinted with GUI.color
+            _linkStyle = new GUIStyle(GUI.skin.label) { wordWrap = false };
+            _linkStyle.normal.textColor = Color.white;
+            _linkStyle.hover.textColor = Color.white;
+            _linkStyle.active.textColor = Color.white;
         }
 
         private static Texture2D MakeTexture(Color color)
         {
             var texture = new Texture2D(1, 1, TextureFormat.RGBA32, false);
             texture.SetPixel(0, 0, color);
+            texture.Apply();
+            texture.hideFlags = HideFlags.HideAndDontSave;
+            return texture;
+        }
+
+        // 3x3 texture with a one pixel frame, for styles with a border of 1
+        private static Texture2D MakeFramedTexture(Color fill, Color frame)
+        {
+            var texture = new Texture2D(3, 3, TextureFormat.RGBA32, false) { filterMode = FilterMode.Point, wrapMode = TextureWrapMode.Clamp };
+            for (int y = 0; y < 3; y++)
+                for (int x = 0; x < 3; x++)
+                    texture.SetPixel(x, y, x == 1 && y == 1 ? fill : frame);
             texture.Apply();
             texture.hideFlags = HideFlags.HideAndDontSave;
             return texture;

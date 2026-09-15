@@ -33,6 +33,9 @@ namespace DnWModLoader
         [JsonProperty("startupBannerSeconds")]
         public float StartupBannerSeconds { get; set; } = 12f;
 
+        [JsonProperty("checkForUpdates")]
+        public bool CheckForUpdates { get; set; } = true;
+
         [JsonProperty("logLevel")]
         [JsonConverter(typeof(StringEnumConverter))]
         public LogLevel LogLevel { get; set; } = LogLevel.Debug;
