@@ -2,36 +2,49 @@
 
 The DnW Mod Loader bundles or depends on the following open-source components.
 
-## Harmony (Lib.Harmony 2.4.2) — `0Harmony.dll`
+## HarmonyX 2.16.1 — `0Harmony.dll`
 
-Copyright (c) 2017 Andreas Pardeike. MIT License.
-https://github.com/pardeike/Harmony
+Copyright (c) 2020 BepInEx contributors. MIT License.
+https://github.com/BepInEx/HarmonyX
 
-Harmony's `0Harmony.dll` (net472 build) merges MonoMod.Core / MonoMod.Utils / MonoMod.RuntimeDetour
-(MIT License, https://github.com/MonoMod/MonoMod) and other components; see the Harmony repository for details.
+A fork of Harmony (copyright (c) 2017 Andreas Pardeike, MIT License, https://github.com/pardeike/Harmony).
+
+## MonoMod 25.x — `MonoMod.RuntimeDetour.dll`, `MonoMod.Core.dll`, `MonoMod.Utils.dll`, `MonoMod.Backports.dll`, `MonoMod.ILHelpers.dll`, `MonoMod.Iced.dll`
+
+Copyright (c) 2016 Maik Macho and the MonoMod contributors. MIT License.
+https://github.com/MonoMod/MonoMod
 
 ## UnityDoorstop 4.4.1 — `winhttp.dll` in the drop-in package
 
 Copyright (c) NeighTools. GNU Lesser General Public License v3.0 (as stated in the project repository).
 https://github.com/NeighTools/UnityDoorstop
 
-Shipped as an unmodified binary. It is loaded by Windows in place of the system winhttp.dll, forwards the real
-functions, and runs `DnWModLoader.dll` after the Mono runtime starts. See `DOORSTOP-NOTICE.txt` next to it.
-
 ## BepInEx 5 plugin API — `BepInEx.dll`
 
 `BepInEx.dll` in the loader folder is not BepInEx. It is the DnW Mod Loader's own implementation of the public API of
-BepInEx 5.4 (`BepInEx`, `BepInEx.Configuration`, `BepInEx.Logging`, `BepInEx.Bootstrap`), named so that BepInEx 5
-plugins load without BepInEx, and it reads and writes settings in BepInEx's `.cfg` format. No BepInEx code is included.
+BepInEx 5.4. No BepInEx code is included.
 BepInEx is by the BepInEx contributors, GNU Lesser General Public License v2.1, https://github.com/BepInEx/BepInEx.
 
-HarmonyX (MIT License, https://github.com/BepInEx/HarmonyX) is not included either: calls to HarmonyX-only members in
-plugins are redirected to equivalents built on Harmony.
+## MelonLoader mod API - `MelonLoader.dll`
 
-## Mono.Cecil 0.11.6 — used by the Doorstop preloader and to load BepInEx plugins
+`MelonLoader.dll` in the loader folder is not MelonLoader. It is the DnW Mod Loader's own implementation of the
+mod-facing part of the MelonLoader 0.7.3 API. No MelonLoader code is included. MelonLoader is by Lava Gang, Apache License 2.0,
+https://github.com/LavaGang/MelonLoader.
+
+## Tomlet 6.2.0 - `Tomlet.dll`
+
+Copyright (c) Samboy063. MIT License.
+https://github.com/SamboyCoding/Tomlet
+
+## Mono.Cecil 0.11.6 — `Mono.Cecil.dll`, `Mono.Cecil.Mdb.dll`, `Mono.Cecil.Pdb.dll`, `Mono.Cecil.Rocks.dll`
 
 Copyright (c) 2008 - 2015 Jb Evain, Copyright (c) 2008 - 2011 Novell, Inc. MIT License.
 https://github.com/jbevain/cecil
+
+## System.ValueTuple — `System.ValueTuple.dll`
+
+Copyright (c) .NET Foundation and Contributors. MIT License.
+https://github.com/dotnet/runtime
 
 ---
 

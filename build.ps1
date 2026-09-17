@@ -65,7 +65,16 @@ Write-Host "Building $version ($Configuration) against $GameDir ..." -Foreground
 if ($LASTEXITCODE -ne 0) { throw "dotnet build failed with exit code $LASTEXITCODE" }
 
 $loaderBin = Join-Path $root "src\DnWModLoader\bin\$Configuration"
-$loaderFiles = @("DnWModLoader.dll", "DnWModLoader.pdb", "DnWModLoader.xml", "BepInEx.dll", "BepInEx.pdb", "0Harmony.dll", "Mono.Cecil.dll")
+$loaderFiles = @(
+    "DnWModLoader.dll", "DnWModLoader.pdb", "DnWModLoader.xml",
+    "BepInEx.dll", "BepInEx.pdb",
+    "MelonLoader.dll", "MelonLoader.pdb", "Tomlet.dll",
+    "0Harmony.dll",
+    "MonoMod.RuntimeDetour.dll", "MonoMod.Core.dll", "MonoMod.Utils.dll",
+    "MonoMod.Backports.dll", "MonoMod.ILHelpers.dll", "MonoMod.Iced.dll",
+    "System.ValueTuple.dll",
+    "Mono.Cecil.dll", "Mono.Cecil.Mdb.dll", "Mono.Cecil.Pdb.dll", "Mono.Cecil.Rocks.dll"
+)
 $docs = @("README.md", "THIRD-PARTY-NOTICES.md", "LICENSE")
 $mods = @("ExampleMod")
 
@@ -93,4 +102,4 @@ Remove-Item $stage -Recurse -Force
 
 Write-Host ""
 Write-Host "Done: $zip" -ForegroundColor Green
-Write-Host "Extract it into the game folder (the one that contains DragNWash.exe)."
+Write-Host "Extract it into the game folder (DragNWash.exe)."

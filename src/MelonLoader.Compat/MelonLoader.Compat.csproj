@@ -1,0 +1,27 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <!-- MelonLoader mods reference an assembly named MelonLoader -->
+    <AssemblyName>MelonLoader</AssemblyName>
+    <RootNamespace>MelonLoader</RootNamespace>
+    <OutputType>Library</OutputType>
+    <Description>MelonLoader mod API for the DnW Mod Loader (not MelonLoader itself).</Description>
+    <AssemblyVersion>0.7.3.0</AssemblyVersion>
+    <NoWarn>$(NoWarn);CS0618;CS0067</NoWarn>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- The same TOML library MelonLoader uses: MelonPreferences_Entry exposes Tomlet types publicly. -->
+    <PackageReference Include="Samboy063.Tomlet" Version="6.2.0" />
+    <!-- HarmonyX, for MelonBase.HarmonyInstance -->
+    <PackageReference Include="HarmonyX" Version="2.16.1" PrivateAssets="all" ExcludeAssets="runtime" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Reference Include="UnityEngine.CoreModule">
+      <HintPath>$(GameManagedDir)UnityEngine.CoreModule.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+  </ItemGroup>
+
+</Project>

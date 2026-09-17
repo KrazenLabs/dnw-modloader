@@ -159,33 +159,7 @@ namespace DnWModLoader.BepInExCompat
 
         private void FindMissing(ScannedAssembly scanned)
         {
-            var module = scanned.Definition.MainModule;
-            foreach (var reference in module.AssemblyReferences)
-            {
-                if (IsAvailable(reference.Name)) continue;
-                scanned.Missing.Add("assembly " + reference.Name + " " + reference.Version);
-            }
-            foreach (var member in module.GetMemberReferences())
-            {
-                var scope = member.DeclaringType?.Scope;
-                if (scope == null || scope.Name != "BepInEx" || scope.MetadataScopeType != MetadataScopeType.AssemblyNameReference) continue;
-                bool resolved;
-                try { resolved = member is MethodReference method ? method.Resolve() != null : member is FieldReference field ? field.Resolve() != null : true; }
-                catch (AssemblyResolutionException) { resolved = false; }
-                if (!resolved) scanned.Missing.Add("BepInEx member " + member.FullName);
-            }
-        }
-
-        private bool IsAvailable(string assemblyName)
-        {
-            foreach (var loaded in AppDomain.CurrentDomain.GetAssemblies())
-            {
-                try { if (string.Equals(loaded.GetName().Name, assemblyName, StringComparison.OrdinalIgnoreCase)) return true; }
-                catch { }
-            }
-            foreach (var dir in _directories)
-                if (File.Exists(System.IO.Path.Combine(dir, assemblyName + ".dll"))) return true;
-            return false;
+            ReferenceScan.Collect(scanned.Definition.MainModule, _directories, scanned.Missing);
         }
 
         private TypeDefinition TryResolve(TypeReference type)

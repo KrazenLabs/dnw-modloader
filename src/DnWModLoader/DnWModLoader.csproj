@@ -9,15 +9,17 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <!-- Harmony is bundled with the loader -->
-    <PackageReference Include="Lib.Harmony" Version="2.4.2" />
-    <!-- Mono.Cecil is used by the Doorstop preloader and to load BepInEx plugins -->
+    <!-- HarmonyX bundled with loader (Harmony 2 API on MonoMod.RuntimeDetour) -->
+    <PackageReference Include="HarmonyX" Version="2.16.1" />
+    <!-- Mono.Cecil is used by Doorstop to load BepInEx plugins -->
     <PackageReference Include="Mono.Cecil" Version="0.11.6" />
   </ItemGroup>
 
   <ItemGroup>
-    <!-- BepInEx.dll: the BepInEx 5 plugin API, shipped next to the loader -->
+    <!-- BepInEx 5 plugin API -->
     <ProjectReference Include="..\BepInEx.Compat\BepInEx.Compat.csproj" />
+    <!-- MelonLoader mod API -->
+    <ProjectReference Include="..\MelonLoader.Compat\MelonLoader.Compat.csproj" />
   </ItemGroup>
 
   <ItemGroup>

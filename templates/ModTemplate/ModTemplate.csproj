@@ -3,7 +3,7 @@
   <!--
     Starter project for a Drag'n Wash mod.
     1. Copy this folder anywhere, rename the .csproj / AssemblyName / namespace.
-    2. Make sure the DnW Mod Loader is installed in the game (DnWModLoader.dll and 0Harmony.dll in <game>\DnWModLoader\).
+    2. Make sure the DnW Mod Loader is installed in the game (its DLLs live in <game>\DnWModLoader\).
     3. `dotnet build` - the DLL and mod.json are copied into <game>/Mods/<AssemblyName>/ automatically.
   -->
 
@@ -44,6 +44,17 @@
       <HintPath>$(GameLoaderDir)0Harmony.dll</HintPath>
       <Private>false</Private>
     </Reference>
+    <!-- Only needed for [HarmonyILManipulator] patches (MonoMod.Cil.ILContext / ILCursor). -->
+    <!--
+    <Reference Include="MonoMod.Utils">
+      <HintPath>$(GameLoaderDir)MonoMod.Utils.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="Mono.Cecil">
+      <HintPath>$(GameLoaderDir)Mono.Cecil.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    -->
     <!-- Game code. -->
     <Reference Include="Assembly-CSharp">
       <HintPath>$(GameManagedDir)Assembly-CSharp.dll</HintPath>

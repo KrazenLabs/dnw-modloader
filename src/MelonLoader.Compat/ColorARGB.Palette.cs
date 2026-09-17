@@ -1,0 +1,155 @@
+using System.Drawing;
+
+namespace MelonLoader.Logging
+{
+    // Must be bound to avoid missing references
+    public partial struct ColorARGB
+    {
+        public static ColorARGB FromArgb(int argb) { return Color.FromArgb(argb); }
+        public static ColorARGB FromArgb(int alpha, ColorARGB baseColor) { return new ColorARGB((byte)alpha, baseColor.R, baseColor.G, baseColor.B); }
+        public static ColorARGB FromArgb(int red, int green, int blue) { return Color.FromArgb(red, green, blue); }
+        public static ColorARGB FromArgb(int alpha, int red, int green, int blue) { return Color.FromArgb(alpha, red, green, blue); }
+
+        public static ColorARGB AliceBlue { get { return Color.AliceBlue; } }
+        public static ColorARGB AntiqueWhite { get { return Color.AntiqueWhite; } }
+        public static ColorARGB Aqua { get { return Color.Aqua; } }
+        public static ColorARGB Aquamarine { get { return Color.Aquamarine; } }
+        public static ColorARGB Azure { get { return Color.Azure; } }
+        public static ColorARGB Beige { get { return Color.Beige; } }
+        public static ColorARGB Bisque { get { return Color.Bisque; } }
+        public static ColorARGB Black { get { return Color.Black; } }
+        public static ColorARGB BlanchedAlmond { get { return Color.BlanchedAlmond; } }
+        public static ColorARGB Blue { get { return Color.Blue; } }
+        public static ColorARGB BlueViolet { get { return Color.BlueViolet; } }
+        public static ColorARGB Brown { get { return Color.Brown; } }
+        public static ColorARGB BurlyWood { get { return Color.BurlyWood; } }
+        public static ColorARGB CadetBlue { get { return Color.CadetBlue; } }
+        public static ColorARGB Chartreuse { get { return Color.Chartreuse; } }
+        public static ColorARGB Chocolate { get { return Color.Chocolate; } }
+        public static ColorARGB Coral { get { return Color.Coral; } }
+        public static ColorARGB CornflowerBlue { get { return Color.CornflowerBlue; } }
+        public static ColorARGB Cornsilk { get { return Color.Cornsilk; } }
+        public static ColorARGB Crimson { get { return Color.Crimson; } }
+        public static ColorARGB Cyan { get { return Color.Cyan; } }
+        public static ColorARGB DarkBlue { get { return Color.DarkBlue; } }
+        public static ColorARGB DarkCyan { get { return Color.DarkCyan; } }
+        public static ColorARGB DarkGoldenrod { get { return Color.DarkGoldenrod; } }
+        public static ColorARGB DarkGray { get { return Color.DarkGray; } }
+        public static ColorARGB DarkGreen { get { return Color.DarkGreen; } }
+        public static ColorARGB DarkKhaki { get { return Color.DarkKhaki; } }
+        public static ColorARGB DarkMagenta { get { return Color.DarkMagenta; } }
+        public static ColorARGB DarkOliveGreen { get { return Color.DarkOliveGreen; } }
+        public static ColorARGB DarkOrange { get { return Color.DarkOrange; } }
+        public static ColorARGB DarkOrchid { get { return Color.DarkOrchid; } }
+        public static ColorARGB DarkRed { get { return Color.DarkRed; } }
+        public static ColorARGB DarkSalmon { get { return Color.DarkSalmon; } }
+        public static ColorARGB DarkSeaGreen { get { return Color.DarkSeaGreen; } }
+        public static ColorARGB DarkSlateBlue { get { return Color.DarkSlateBlue; } }
+        public static ColorARGB DarkSlateGray { get { return Color.DarkSlateGray; } }
+        public static ColorARGB DarkTurquoise { get { return Color.DarkTurquoise; } }
+        public static ColorARGB DarkViolet { get { return Color.DarkViolet; } }
+        public static ColorARGB DeepPink { get { return Color.DeepPink; } }
+        public static ColorARGB DeepSkyBlue { get { return Color.DeepSkyBlue; } }
+        public static ColorARGB DimGray { get { return Color.DimGray; } }
+        public static ColorARGB DodgerBlue { get { return Color.DodgerBlue; } }
+        public static ColorARGB Firebrick { get { return Color.Firebrick; } }
+        public static ColorARGB FloralWhite { get { return Color.FloralWhite; } }
+        public static ColorARGB ForestGreen { get { return Color.ForestGreen; } }
+        public static ColorARGB Fuchsia { get { return Color.Fuchsia; } }
+        public static ColorARGB Gainsboro { get { return Color.Gainsboro; } }
+        public static ColorARGB GhostWhite { get { return Color.GhostWhite; } }
+        public static ColorARGB Gold { get { return Color.Gold; } }
+        public static ColorARGB Goldenrod { get { return Color.Goldenrod; } }
+        public static ColorARGB Gray { get { return Color.Gray; } }
+        public static ColorARGB Green { get { return Color.Green; } }
+        public static ColorARGB GreenYellow { get { return Color.GreenYellow; } }
+        public static ColorARGB Honeydew { get { return Color.Honeydew; } }
+        public static ColorARGB HotPink { get { return Color.HotPink; } }
+        public static ColorARGB IndianRed { get { return Color.IndianRed; } }
+        public static ColorARGB Indigo { get { return Color.Indigo; } }
+        public static ColorARGB Ivory { get { return Color.Ivory; } }
+        public static ColorARGB Khaki { get { return Color.Khaki; } }
+        public static ColorARGB Lavender { get { return Color.Lavender; } }
+        public static ColorARGB LavenderBlush { get { return Color.LavenderBlush; } }
+        public static ColorARGB LawnGreen { get { return Color.LawnGreen; } }
+        public static ColorARGB LemonChiffon { get { return Color.LemonChiffon; } }
+        public static ColorARGB LightBlue { get { return Color.LightBlue; } }
+        public static ColorARGB LightCoral { get { return Color.LightCoral; } }
+        public static ColorARGB LightCyan { get { return Color.LightCyan; } }
+        public static ColorARGB LightGoldenrodYellow { get { return Color.LightGoldenrodYellow; } }
+        public static ColorARGB LightGray { get { return Color.LightGray; } }
+        public static ColorARGB LightGreen { get { return Color.LightGreen; } }
+        public static ColorARGB LightPink { get { return Color.LightPink; } }
+        public static ColorARGB LightSalmon { get { return Color.LightSalmon; } }
+        public static ColorARGB LightSeaGreen { get { return Color.LightSeaGreen; } }
+        public static ColorARGB LightSkyBlue { get { return Color.LightSkyBlue; } }
+        public static ColorARGB LightSlateGray { get { return Color.LightSlateGray; } }
+        public static ColorARGB LightSteelBlue { get { return Color.LightSteelBlue; } }
+        public static ColorARGB LightYellow { get { return Color.LightYellow; } }
+        public static ColorARGB Lime { get { return Color.Lime; } }
+        public static ColorARGB LimeGreen { get { return Color.LimeGreen; } }
+        public static ColorARGB Linen { get { return Color.Linen; } }
+        public static ColorARGB Magenta { get { return Color.Magenta; } }
+        public static ColorARGB Maroon { get { return Color.Maroon; } }
+        public static ColorARGB MediumAquamarine { get { return Color.MediumAquamarine; } }
+        public static ColorARGB MediumBlue { get { return Color.MediumBlue; } }
+        public static ColorARGB MediumOrchid { get { return Color.MediumOrchid; } }
+        public static ColorARGB MediumPurple { get { return Color.MediumPurple; } }
+        public static ColorARGB MediumSeaGreen { get { return Color.MediumSeaGreen; } }
+        public static ColorARGB MediumSlateBlue { get { return Color.MediumSlateBlue; } }
+        public static ColorARGB MediumSpringGreen { get { return Color.MediumSpringGreen; } }
+        public static ColorARGB MediumTurquoise { get { return Color.MediumTurquoise; } }
+        public static ColorARGB MediumVioletRed { get { return Color.MediumVioletRed; } }
+        public static ColorARGB MidnightBlue { get { return Color.MidnightBlue; } }
+        public static ColorARGB MintCream { get { return Color.MintCream; } }
+        public static ColorARGB MistyRose { get { return Color.MistyRose; } }
+        public static ColorARGB Moccasin { get { return Color.Moccasin; } }
+        public static ColorARGB NavajoWhite { get { return Color.NavajoWhite; } }
+        public static ColorARGB Navy { get { return Color.Navy; } }
+        public static ColorARGB OldLace { get { return Color.OldLace; } }
+        public static ColorARGB Olive { get { return Color.Olive; } }
+        public static ColorARGB OliveDrab { get { return Color.OliveDrab; } }
+        public static ColorARGB Orange { get { return Color.Orange; } }
+        public static ColorARGB OrangeRed { get { return Color.OrangeRed; } }
+        public static ColorARGB Orchid { get { return Color.Orchid; } }
+        public static ColorARGB PaleGoldenrod { get { return Color.PaleGoldenrod; } }
+        public static ColorARGB PaleGreen { get { return Color.PaleGreen; } }
+        public static ColorARGB PaleTurquoise { get { return Color.PaleTurquoise; } }
+        public static ColorARGB PaleVioletRed { get { return Color.PaleVioletRed; } }
+        public static ColorARGB PapayaWhip { get { return Color.PapayaWhip; } }
+        public static ColorARGB PeachPuff { get { return Color.PeachPuff; } }
+        public static ColorARGB Peru { get { return Color.Peru; } }
+        public static ColorARGB Pink { get { return Color.Pink; } }
+        public static ColorARGB Plum { get { return Color.Plum; } }
+        public static ColorARGB PowderBlue { get { return Color.PowderBlue; } }
+        public static ColorARGB Purple { get { return Color.Purple; } }
+        public static ColorARGB Red { get { return Color.Red; } }
+        public static ColorARGB RosyBrown { get { return Color.RosyBrown; } }
+        public static ColorARGB RoyalBlue { get { return Color.RoyalBlue; } }
+        public static ColorARGB SaddleBrown { get { return Color.SaddleBrown; } }
+        public static ColorARGB Salmon { get { return Color.Salmon; } }
+        public static ColorARGB SandyBrown { get { return Color.SandyBrown; } }
+        public static ColorARGB SeaGreen { get { return Color.SeaGreen; } }
+        public static ColorARGB SeaShell { get { return Color.SeaShell; } }
+        public static ColorARGB Sienna { get { return Color.Sienna; } }
+        public static ColorARGB Silver { get { return Color.Silver; } }
+        public static ColorARGB SkyBlue { get { return Color.SkyBlue; } }
+        public static ColorARGB SlateBlue { get { return Color.SlateBlue; } }
+        public static ColorARGB SlateGray { get { return Color.SlateGray; } }
+        public static ColorARGB Snow { get { return Color.Snow; } }
+        public static ColorARGB SpringGreen { get { return Color.SpringGreen; } }
+        public static ColorARGB SteelBlue { get { return Color.SteelBlue; } }
+        public static ColorARGB Tan { get { return Color.Tan; } }
+        public static ColorARGB Teal { get { return Color.Teal; } }
+        public static ColorARGB Thistle { get { return Color.Thistle; } }
+        public static ColorARGB Tomato { get { return Color.Tomato; } }
+        public static ColorARGB Transparent { get { return Color.Transparent; } }
+        public static ColorARGB Turquoise { get { return Color.Turquoise; } }
+        public static ColorARGB Violet { get { return Color.Violet; } }
+        public static ColorARGB Wheat { get { return Color.Wheat; } }
+        public static ColorARGB White { get { return Color.White; } }
+        public static ColorARGB WhiteSmoke { get { return Color.WhiteSmoke; } }
+        public static ColorARGB Yellow { get { return Color.Yellow; } }
+        public static ColorARGB YellowGreen { get { return Color.YellowGreen; } }
+    }
+}

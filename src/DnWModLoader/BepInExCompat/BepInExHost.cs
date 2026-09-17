@@ -19,7 +19,14 @@ namespace DnWModLoader.BepInExCompat
 
         private static readonly List<Plugin> Plugins = new List<Plugin>();
         private static readonly Dictionary<string, ScannedAssembly> AssembliesByName = new Dictionary<string, ScannedAssembly>(StringComparer.OrdinalIgnoreCase);
-        private static readonly HashSet<string> SharedAssemblies = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "0Harmony", "BepInEx", "DnWModLoader", "Mono.Cecil" };
+
+        private static readonly HashSet<string> SharedAssemblies = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+        {
+            "DnWModLoader", "BepInEx", "MelonLoader", "0Harmony", "Tomlet",
+            "MonoMod.RuntimeDetour", "MonoMod.Core", "MonoMod.Utils",
+            "MonoMod.Backports", "MonoMod.ILHelpers", "MonoMod.Iced",
+            "Mono.Cecil", "Mono.Cecil.Mdb", "Mono.Cecil.Pdb", "Mono.Cecil.Rocks",
+        };
         private static bool _discovered;
         private static bool _started;
 
@@ -335,29 +342,7 @@ namespace DnWModLoader.BepInExCompat
             foreach (var missing in scanned.Missing)
                 Log(BepInLogging.LogLevel.Warning, Path.GetFileName(scanned.Path) + " references " + missing + ", which is not supported.");
 
-            var interop = HarmonyXInterop.Apply(scanned.Definition.MainModule);
-            foreach (var member in interop.Unsupported)
-                Log(BepInLogging.LogLevel.Warning, Path.GetFileName(scanned.Path) + " uses the HarmonyX-only " + member + ", which is not supported.");
-
-            Assembly assembly;
-            if (interop.Changed)
-            {
-                byte[] bytes;
-                using (var stream = new MemoryStream())
-                {
-                    scanned.Definition.Write(stream);
-                    bytes = stream.ToArray();
-                }
-                assembly = Assembly.Load(bytes);
-                AssemblyLocations.Register(assembly, scanned.Path);
-                ModLoader.Logger.Debug("Redirected HarmonyX members in " + Path.GetFileName(scanned.Path) + ": " + string.Join(", ", interop.Redirected.ToArray()));
-            }
-            else
-            {
-                assembly = Assembly.LoadFrom(scanned.Path);
-            }
-            scanned.Loaded = assembly;
-            return assembly;
+            return scanned.Loaded = Assembly.LoadFrom(scanned.Path);
         }
 
         private static Assembly ResolvePluginAssembly(object sender, ResolveEventArgs args)

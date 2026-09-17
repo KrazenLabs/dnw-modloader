@@ -88,14 +88,18 @@ namespace DnWModLoader
             {
                 string name = new AssemblyName(args.Name).Name;
                 if (string.IsNullOrEmpty(name) || name.EndsWith(".resources", StringComparison.OrdinalIgnoreCase)) return null;
+
+                if (LoaderDirectory != null)
+                {
+                    string ours = Path.Combine(LoaderDirectory, name + ".dll");
+                    if (File.Exists(ours)) return Assembly.LoadFrom(ours);
+                }
                 foreach (var loaded in AppDomain.CurrentDomain.GetAssemblies())
                 {
                     try { if (string.Equals(loaded.GetName().Name, name, StringComparison.OrdinalIgnoreCase)) return loaded; }
                     catch { }
                 }
-                if (LoaderDirectory == null) return null;
-                string candidate = Path.Combine(LoaderDirectory, name + ".dll");
-                return File.Exists(candidate) ? Assembly.LoadFrom(candidate) : null;
+                return null;
             }
             catch
             {

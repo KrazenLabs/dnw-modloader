@@ -22,6 +22,7 @@ namespace DnWModLoader
         private readonly GameCursor _cursor = new GameCursor();
         private readonly float _bannerUntil;
         private readonly bool _showDirect3D12Warning;
+        private readonly bool _showParallelLoaderWarning;
 
         private bool _visible;
         private int _tab = SettingsTab;
@@ -43,6 +44,7 @@ namespace DnWModLoader
             _visible = _config.ShowOverlayOnStart;
             _bannerUntil = _config.ShowStartupBanner ? Time.realtimeSinceStartup + Mathf.Max(1f, _config.StartupBannerSeconds) : 0f;
             _showDirect3D12Warning = Direct3D12Warning.Applies();
+            _showParallelLoaderWarning = ParallelLoaderWarning.Applies();
         }
 
         public bool Visible
@@ -272,7 +274,9 @@ namespace DnWModLoader
         private void DrawStartupBanner()
         {
             DrawBanner(0, StartupBannerText(), _bannerStyle);
-            if (_showDirect3D12Warning) DrawBanner(1, Direct3D12Warning.Banner, _warningBannerStyle);
+            int line = 1;
+            if (_showDirect3D12Warning) DrawBanner(line++, Direct3D12Warning.Banner, _warningBannerStyle);
+            if (_showParallelLoaderWarning) DrawBanner(line, ParallelLoaderWarning.Banner, _warningBannerStyle);
         }
 
         private void DrawBanner(int line, string text, GUIStyle style)

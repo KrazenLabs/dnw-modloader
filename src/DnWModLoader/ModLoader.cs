@@ -23,9 +23,9 @@ namespace DnWModLoader
 
     public static class ModLoader
     {
-        public const string Version = "1.5.0";
+        public const string Version = "1.6.0";
 
-        public static readonly Version ParsedVersion = new Version(1, 5, 0);
+        public static readonly Version ParsedVersion = new Version(1, 6, 0);
 
         public const string ModsFolderName = "Mods";
         public const string ConfigFolderName = "config";
@@ -149,11 +149,22 @@ namespace DnWModLoader
                 Logger.Exception(e, "BepInEx plugin discovery failed");
             }
 
+            try
+            {
+                WarnAboutMelonPlugins();
+                _melonsFound = ModsFolderMelons.Count > 0;
+                if (_melonsFound) DiscoverMelons();
+            }
+            catch (Exception e)
+            {
+                Logger.Exception(e, "MelonLoader mod discovery failed");
+            }
+
             Phase = LoaderPhase.Initialized;
             CountStatuses(out int loaded, out int failed, out int skipped, out int disabled);
             int waiting = ModList.Count(c => c.Framework != null && c.Status == ModStatus.Discovered);
             Logger.Info("Initialization finished in " + stopwatch.ElapsedMilliseconds + " ms: " + loaded + " loaded, " + failed + " failed, " + skipped + " skipped, " + disabled + " disabled"
-                        + (waiting > 0 ? ", " + waiting + " BepInEx plugin(s) found." : "."));
+                        + (waiting > 0 ? ", " + waiting + " hosted plugin(s)/mod(s) found." : "."));
 
             try { ModsInitialized?.Invoke(); }
             catch (Exception e) { Logger.Exception(e, "ModsInitialized exception"); }
@@ -161,12 +172,18 @@ namespace DnWModLoader
             HookSceneEvents();
             EnsureBehaviour("SubsystemRegistration");
 
-            if (!Preloader.AfterRegistrationHooked) StartBepInExPlugins("SubsystemRegistration");
+            if (!Preloader.AfterRegistrationHooked)
+            {
+                StartBepInExPlugins("SubsystemRegistration");
+                StartMelons("SubsystemRegistration");
+            }
         }
 
         internal static void AfterRegistration()
         {
-            StartBepInExPlugins(Preloader.AfterRegistrationPhase ?? "a later initializer");
+            string phase = Preloader.AfterRegistrationPhase ?? "a later initializer";
+            StartBepInExPlugins(phase);
+            StartMelons(phase);
         }
 
         internal static void GameStarted()
@@ -180,6 +197,11 @@ namespace DnWModLoader
         internal static void Shutdown()
         {
             Logger.Info("Application quitting.");
+            if (_melonsFound)
+            {
+                try { QuitMelons(); }
+                catch (Exception e) { Logger.Exception(e, "Shutting down MelonLoader mods failed"); }
+            }
             Log.Close();
         }
 
@@ -230,6 +252,7 @@ namespace DnWModLoader
             }
             catch (Exception e) { Logger.Debug("Application info unavailable: " + e.Message); }
             if (Direct3D12Warning.Applies()) Logger.Warning(Direct3D12Warning.LogMessage);
+            if (ParallelLoaderWarning.Applies()) Logger.Error(ParallelLoaderWarning.LogMessage);
             try { Logger.Debug("OS: " + SystemInfo.operatingSystem + " | CLR: " + Environment.Version + " | 64-bit: " + Environment.Is64BitProcess); } catch { }
             try { Logger.Debug("Command line: " + string.Join(" ", Environment.GetCommandLineArgs())); } catch { }
             foreach (var line in Preloader.TakeEarlyLog()) Logger.Debug("[preloader] " + line);
@@ -292,6 +315,16 @@ namespace DnWModLoader
             catch { return null; }
             if (string.IsNullOrEmpty(name) || name.EndsWith(".resources", StringComparison.OrdinalIgnoreCase)) return null;
 
+            if (!string.IsNullOrEmpty(LoaderDirectory))
+            {
+                string ours = Path.Combine(LoaderDirectory, name + ".dll");
+                if (File.Exists(ours))
+                {
+                    try { return Assembly.LoadFrom(ours); }
+                    catch (Exception e) { Logger.Warning("Failed to load " + ours + " while resolving " + args.Name + ": " + e.Message); }
+                }
+            }
+
             foreach (var loaded in AppDomain.CurrentDomain.GetAssemblies())
             {
                 try { if (string.Equals(loaded.GetName().Name, name, StringComparison.OrdinalIgnoreCase)) return loaded; }
@@ -316,7 +349,7 @@ namespace DnWModLoader
             return null;
         }
 
-        private static void AddResolveDirectory(string dir)
+        internal static void AddResolveDirectory(string dir)
         {
             if (string.IsNullOrEmpty(dir) || !Directory.Exists(dir)) return;
             foreach (var existing in ResolveDirectories)
@@ -348,7 +381,13 @@ namespace DnWModLoader
             public string DiscoveryError;
         }
 
-        private static readonly string[] ReservedDllNames = { "DnWModLoader.dll", "0Harmony.dll", "BepInEx.dll" };
+        private static readonly string[] ReservedDllNames =
+        {
+            "DnWModLoader.dll", "BepInEx.dll", "MelonLoader.dll", "0Harmony.dll", "Tomlet.dll",
+            "MonoMod.RuntimeDetour.dll", "MonoMod.Core.dll", "MonoMod.Utils.dll",
+            "MonoMod.Backports.dll", "MonoMod.ILHelpers.dll", "MonoMod.Iced.dll",
+            "Mono.Cecil.dll", "Mono.Cecil.Mdb.dll", "Mono.Cecil.Pdb.dll", "Mono.Cecil.Rocks.dll",
+        };
 
         // BepInEx plugins within Mods folder
         private static readonly List<string> ModsFolderBepInExPlugins = new List<string>();
@@ -381,6 +420,51 @@ namespace DnWModLoader
             BepInExCompat.BepInExHost.Start(phase);
         }
 
+        private static readonly List<string> ModsFolderMelons = new List<string>();
+        // MelonLoader.dll is only loaded when there are melons
+        private static bool _melonsFound;
+
+        [MethodImpl(MethodImplOptions.NoInlining)]
+        private static void DiscoverMelons()
+        {
+            MelonLoaderCompat.MelonLoaderHost.Discover(ModsFolderMelons);
+        }
+
+        // Warn about missing MelonLoader plugin support
+        private static void WarnAboutMelonPlugins()
+        {
+            string plugins = Path.Combine(GameDirectory, "Plugins");
+            string[] files;
+            try { files = Directory.Exists(plugins) ? Directory.GetFiles(plugins, "*.dll", SearchOption.AllDirectories) : new string[0]; }
+            catch (Exception) { return; }
+            if (files.Length == 0) return;
+
+            Logger.Warning(files.Length + " file(s) in the Plugins folder: MelonLoader plugins start before the game "
+                           + "engine does, which this loader cannot do, so they are not loaded. MelonLoader mods go in "
+                           + ModsFolderName + " and do work.");
+            foreach (var file in files)
+                Logger.Debug("  not loaded: Plugins" + Path.DirectorySeparatorChar + file.Substring(plugins.Length).TrimStart(Path.DirectorySeparatorChar));
+        }
+
+        private static void StartMelons(string phase)
+        {
+            if (!_melonsFound) return;
+            try { StartMelonsCore(phase); }
+            catch (Exception e) { Logger.Exception(e, "Starting MelonLoader mods failed"); }
+        }
+
+        [MethodImpl(MethodImplOptions.NoInlining)]
+        private static void StartMelonsCore(string phase)
+        {
+            MelonLoaderCompat.MelonLoaderHost.Start(phase);
+        }
+
+        [MethodImpl(MethodImplOptions.NoInlining)]
+        private static void QuitMelons()
+        {
+            MelonLoaderCompat.MelonLoaderHost.Quit();
+        }
+
         internal static void AddExternalMod(ModContainer container)
         {
             ModList.Add(container);
@@ -398,12 +482,16 @@ namespace DnWModLoader
             return true;
         }
 
-        private static bool ReferencesBepInEx(string path)
+        private static bool ReferencesBepInEx(string path) { return References(path, "BepInEx"); }
+
+        private static bool ReferencesMelonLoader(string path) { return References(path, "MelonLoader"); }
+
+        private static bool References(string path, string assemblyName)
         {
             try
             {
                 using (var module = Mono.Cecil.ModuleDefinition.ReadModule(path, new Mono.Cecil.ReaderParameters { ReadingMode = Mono.Cecil.ReadingMode.Deferred }))
-                    return module.AssemblyReferences.Any(r => r.Name == "BepInEx");
+                    return module.AssemblyReferences.Any(r => r.Name == assemblyName);
             }
             catch
             {
@@ -526,6 +614,7 @@ namespace DnWModLoader
                 {
                     if (IsReservedDll(dll)) continue;
                     if (ReferencesBepInEx(dll)) { ModsFolderBepInExPlugins.Add(dll); continue; }
+                    if (ReferencesMelonLoader(dll)) { ModsFolderMelons.Add(dll); continue; }
                     result.Add(new Candidate { Directory = dir, AssemblyPath = dll, IsBare = true });
                 }
             }
@@ -534,6 +623,7 @@ namespace DnWModLoader
             {
                 if (IsReservedDll(dll)) continue;
                 if (ReferencesBepInEx(dll)) { ModsFolderBepInExPlugins.Add(dll); continue; }
+                if (ReferencesMelonLoader(dll)) { ModsFolderMelons.Add(dll); continue; }
                 result.Add(new Candidate { Directory = ModsDirectory, AssemblyPath = dll, IsBare = true });
             }
             return result;
@@ -843,7 +933,7 @@ namespace DnWModLoader
                 Logger.Exception(e, "Mod " + info.Id + " failed to initialize");
                 if (instance != null)
                 {
-                    try { instance.Harmony.UnpatchAll(info.Id); }
+                    try { instance.Harmony.UnpatchSelf(); }
                     catch (Exception unpatchError) { Logger.Debug("Unpatching " + info.Id + " failed: " + unpatchError.Message); }
                 }
             }
@@ -853,7 +943,7 @@ namespace DnWModLoader
             }
         }
 
-        private static void RefreshLoadedCache()
+        internal static void RefreshLoadedCache()
         {
             _loadedCache = ModList.Where(c => c.CallbacksEnabled).ToArray();
         }
