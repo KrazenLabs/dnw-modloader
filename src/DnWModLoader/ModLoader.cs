@@ -23,9 +23,9 @@ namespace DnWModLoader
 
     public static class ModLoader
     {
-        public const string Version = "1.6.0";
+        public const string Version = "1.6.2";
 
-        public static readonly Version ParsedVersion = new Version(1, 6, 0);
+        public static readonly Version ParsedVersion = new Version(1, 6, 2);
 
         public const string ModsFolderName = "Mods";
         public const string ConfigFolderName = "config";
