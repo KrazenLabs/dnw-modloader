@@ -56,31 +56,49 @@ namespace DnWModLoader.Logging
 
         public static string FilePath { get; private set; }
 
+        public static bool IsFallback { get; private set; }
+
         public static event Action<LogEntry> EntryLogged;
 
-        internal static void Open(string path)
+        internal static void Open(string path, string fallbackPath = null)
         {
             lock (Sync)
             {
-                try
+                var error = TryOpen(path);
+                if (error == null) return;
+
+                if (!string.IsNullOrEmpty(fallbackPath) && TryOpen(fallbackPath) == null)
                 {
-                    string dir = Path.GetDirectoryName(path);
-                    if (!string.IsNullOrEmpty(dir)) Directory.CreateDirectory(dir);
-                    if (File.Exists(path))
-                    {
-                        string prev = Path.Combine(dir ?? "", Path.GetFileNameWithoutExtension(path) + ".prev" + Path.GetExtension(path));
-                        try { File.Copy(path, prev, true); } catch { /* best effort */ }
-                    }
-                    _writer = new StreamWriter(new FileStream(path, FileMode.Create, FileAccess.Write, FileShare.ReadWrite), new UTF8Encoding(false));
-                    _writer.AutoFlush = true;
-                    FilePath = path;
+                    IsFallback = true;
+                    try { UnityEngine.Debug.LogWarning(UnityEchoMarker + "Could not open log file " + path + " (" + error.Message + "); logging to " + fallbackPath + " instead."); } catch { }
+                    return;
                 }
-                catch (Exception e)
+
+                try { UnityEngine.Debug.LogWarning(UnityEchoMarker + "Could not open log file " + path + ": " + error.Message); } catch { }
+            }
+        }
+
+        private static Exception TryOpen(string path)
+        {
+            try
+            {
+                string dir = Path.GetDirectoryName(path);
+                if (!string.IsNullOrEmpty(dir)) Directory.CreateDirectory(dir);
+                if (File.Exists(path))
                 {
-                    _writer = null;
-                    FilePath = null;
-                    try { UnityEngine.Debug.LogWarning(UnityEchoMarker + "Could not open log file " + path + ": " + e.Message); } catch { }
+                    string prev = Path.Combine(dir ?? "", Path.GetFileNameWithoutExtension(path) + ".prev" + Path.GetExtension(path));
+                    try { File.Copy(path, prev, true); } catch { /* best effort */ }
                 }
+                _writer = new StreamWriter(new FileStream(path, FileMode.Create, FileAccess.Write, FileShare.ReadWrite), new UTF8Encoding(false));
+                _writer.AutoFlush = true;
+                FilePath = path;
+                return null;
+            }
+            catch (Exception e)
+            {
+                _writer = null;
+                FilePath = null;
+                return e;
             }
         }
 

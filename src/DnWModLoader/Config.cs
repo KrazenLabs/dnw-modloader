@@ -454,6 +454,10 @@ namespace DnWModLoader.Config
                     if (File.Exists(FilePath)) File.Delete(FilePath);
                     File.Move(tmp, FilePath);
                 }
+                catch (UnauthorizedAccessException e)
+                {
+                    Logger?.Warning("Failed to save config " + FilePath + ": " + e.Message);
+                }
                 catch (Exception e)
                 {
                     Logger?.Exception(e, "Failed to save config " + FilePath);

@@ -23,17 +23,19 @@ namespace DnWModLoader
 
     public static class ModLoader
     {
-        public const string Version = "1.6.2";
+        public const string Version = "1.6.3";
 
-        public static readonly Version ParsedVersion = new Version(1, 6, 2);
+        public static readonly Version ParsedVersion = new Version(1, 6, 3);
 
         public const string ModsFolderName = "Mods";
         public const string ConfigFolderName = "config";
         public const string LogFileName = "ModLoader.log";
+        public const string PreviousLogFileName = "ModLoader.prev.log";
 
         private static readonly List<ModContainer> ModList = new List<ModContainer>();
         private static readonly Dictionary<string, ModContainer> ModsById = new Dictionary<string, ModContainer>(StringComparer.OrdinalIgnoreCase);
         private static readonly List<string> ResolveDirectories = new List<string>();
+        private static readonly List<string> SetupProblems = new List<string>();
         private static ModContainer[] _loadedCache = new ModContainer[0];
         private static bool _sceneEventsHooked;
 
@@ -117,9 +119,11 @@ namespace DnWModLoader
             var stopwatch = Stopwatch.StartNew();
 
             ResolvePaths();
-            Directory.CreateDirectory(ModsDirectory);
-            Directory.CreateDirectory(ConfigDirectory);
-            Log.Open(Path.Combine(ModsDirectory, LogFileName));
+            CreateDirectory(ModsDirectory);
+            CreateDirectory(ConfigDirectory);
+            string fallbackDirectory = FallbackDirectory();
+            Log.Open(Path.Combine(ModsDirectory, LogFileName), fallbackDirectory != null ? Path.Combine(fallbackDirectory, LogFileName) : null);
+            if (Log.FilePath != null && !Log.IsFallback) RemoveFallbackLogs(fallbackDirectory);
 
             Config = LoaderConfig.Load(Path.Combine(ModsDirectory, LoaderConfig.FileName), Logger);
             Log.MinimumLevel = Config.LogLevel;
@@ -242,6 +246,38 @@ namespace DnWModLoader
             ConfigDirectory = Path.Combine(ModsDirectory, ConfigFolderName);
         }
 
+        private static void CreateDirectory(string directory)
+        {
+            try { Directory.CreateDirectory(directory); }
+            catch (Exception e) { SetupProblems.Add("Could not create " + directory + ": " + e.Message); }
+        }
+
+        internal static string FallbackDirectory()
+        {
+            try
+            {
+                string persistent = Application.persistentDataPath;
+                if (!string.IsNullOrEmpty(persistent)) return Path.GetFullPath(persistent);
+            }
+            catch { }
+            try { return Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "DnWModLoader"); }
+            catch { return null; }
+        }
+
+        private static void RemoveFallbackLogs(string directory)
+        {
+            if (string.IsNullOrEmpty(directory)) return;
+            foreach (var name in new[] { LogFileName, PreviousLogFileName })
+            {
+                try
+                {
+                    string path = Path.Combine(directory, name);
+                    if (File.Exists(path)) File.Delete(path);
+                }
+                catch { }
+            }
+        }
+
         private static void LogHeader()
         {
             Logger.Info("DnW Mod Loader " + Version + " starting (" + Preloader.Status + ")");
@@ -253,12 +289,15 @@ namespace DnWModLoader
             catch (Exception e) { Logger.Debug("Application info unavailable: " + e.Message); }
             if (Direct3D12Warning.Applies()) Logger.Warning(Direct3D12Warning.LogMessage);
             if (ParallelLoaderWarning.Applies()) Logger.Error(ParallelLoaderWarning.LogMessage);
+            if (WriteProtectionWarning.Applies()) Logger.Warning(WriteProtectionWarning.LogMessage);
+            foreach (var problem in SetupProblems) Logger.Warning(problem);
             try { Logger.Debug("OS: " + SystemInfo.operatingSystem + " | CLR: " + Environment.Version + " | 64-bit: " + Environment.Is64BitProcess); } catch { }
             try { Logger.Debug("Command line: " + string.Join(" ", Environment.GetCommandLineArgs())); } catch { }
             foreach (var line in Preloader.TakeEarlyLog()) Logger.Debug("[preloader] " + line);
             Logger.Debug("Game directory: " + GameDirectory);
             Logger.Debug("Loader directory: " + LoaderDirectory);
             Logger.Debug("Mods directory: " + ModsDirectory);
+            Logger.Debug("Log file: " + Log.FilePath);
             Logger.Debug("Config: hotkey=" + Config.OverlayHotkey + " logLevel=" + Config.LogLevel + " mirrorUnityLog=" + Config.MirrorUnityLog
                          + " disabledMods=[" + string.Join(", ", Config.DisabledMods) + "]");
         }

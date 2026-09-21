@@ -101,6 +101,10 @@ namespace DnWModLoader
                 if (!string.IsNullOrEmpty(dir)) Directory.CreateDirectory(dir);
                 File.WriteAllText(FilePath, JsonConvert.SerializeObject(this, Formatting.Indented), new UTF8Encoding(false));
             }
+            catch (UnauthorizedAccessException e)
+            {
+                logger?.Warning("Could not save " + FilePath + ": " + e.Message);
+            }
             catch (Exception e)
             {
                 logger?.Exception(e, "Could not save " + FilePath);

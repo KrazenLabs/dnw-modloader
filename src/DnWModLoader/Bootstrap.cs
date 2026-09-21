@@ -32,13 +32,26 @@ namespace DnWModLoader
             string text = "[DnW] Bootstrap.Init failed: " + e;
             try { ModLoader.Logger.Fatal("Bootstrap.Init failed: " + e); } catch { }
             try { UnityEngine.Debug.LogError(text); } catch { }
+
+            string line = "[" + DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss") + "] " + text + Environment.NewLine;
+            if (!AppendCrashLog(() => Path.Combine(ModLoader.GuessGameDirectory(), ModLoader.ModsFolderName), line))
+                AppendCrashLog(ModLoader.FallbackDirectory, line);
+        }
+
+        private static bool AppendCrashLog(Func<string> directory, string line)
+        {
             try
             {
-                string crashLog = Path.Combine(ModLoader.GuessGameDirectory(), ModLoader.ModsFolderName, "ModLoader.crash.log");
-                Directory.CreateDirectory(Path.GetDirectoryName(crashLog));
-                File.AppendAllText(crashLog, "[" + DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss") + "] " + text + Environment.NewLine);
+                string folder = directory();
+                if (string.IsNullOrEmpty(folder)) return false;
+                Directory.CreateDirectory(folder);
+                File.AppendAllText(Path.Combine(folder, "ModLoader.crash.log"), line);
+                return true;
             }
-            catch { }
+            catch
+            {
+                return false;
+            }
         }
     }
 }

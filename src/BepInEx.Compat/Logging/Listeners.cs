@@ -30,6 +30,7 @@ namespace BepInEx.Logging
                     stream = new FileStream(Path.Combine(root, name), appendLog ? FileMode.Append : FileMode.Create, FileAccess.Write, FileShare.Read);
                 }
                 catch (IOException) { }
+                catch (UnauthorizedAccessException) { break; }
             }
             if (stream == null)
             {

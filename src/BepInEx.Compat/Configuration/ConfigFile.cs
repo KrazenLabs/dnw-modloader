@@ -141,6 +141,7 @@ namespace BepInEx.Configuration
         private readonly BepInPlugin _ownerMetadata;
         private readonly object _ioLock = new object();
         private readonly Dictionary<ConfigDefinition, string> _orphaned = new Dictionary<ConfigDefinition, string>();
+        private bool _saveFailed;
 
         protected Dictionary<ConfigDefinition, ConfigEntryBase> Entries { get; } = new Dictionary<ConfigDefinition, ConfigEntryBase>();
 
@@ -208,31 +209,46 @@ namespace BepInEx.Configuration
         {
             lock (_ioLock)
             {
-                string directory = Path.GetDirectoryName(ConfigFilePath);
-                if (directory != null) Directory.CreateDirectory(directory);
-
-                var lines = Entries.Select(x => new { x.Key, Entry = x.Value, Value = x.Value.GetSerializedValue() })
-                    .Concat(_orphaned.Select(x => new { x.Key, Entry = (ConfigEntryBase)null, x.Value }));
-
-                using (var writer = new StreamWriter(ConfigFilePath, false, Utility.UTF8NoBom))
+                try
                 {
-                    if (_ownerMetadata != null)
+                    Write();
+                    _saveFailed = false;
+                }
+                catch (Exception e) when (e is IOException || e is UnauthorizedAccessException)
+                {
+                    if (_saveFailed) return;
+                    _saveFailed = true;
+                    Logger.Log(LogLevel.Warning, "Could not save " + ConfigFilePath + ": " + e.Message);
+                }
+            }
+        }
+
+        private void Write()
+        {
+            string directory = Path.GetDirectoryName(ConfigFilePath);
+            if (directory != null) Directory.CreateDirectory(directory);
+
+            var lines = Entries.Select(x => new { x.Key, Entry = x.Value, Value = x.Value.GetSerializedValue() })
+                .Concat(_orphaned.Select(x => new { x.Key, Entry = (ConfigEntryBase)null, x.Value }));
+
+            using (var writer = new StreamWriter(ConfigFilePath, false, Utility.UTF8NoBom))
+            {
+                if (_ownerMetadata != null)
+                {
+                    writer.WriteLine("Settings file created by plugin " + _ownerMetadata.Name + " v" + _ownerMetadata.Version);
+                    writer.WriteLine("Plugin GUID: " + _ownerMetadata.GUID);
+                    writer.WriteLine();
+                }
+                foreach (var section in lines.GroupBy(x => x.Key.Section).OrderBy(x => x.Key))
+                {
+                    writer.WriteLine("[" + section.Key + "]");
+                    foreach (var line in section)
                     {
-                        writer.WriteLine("## Settings file was created by plugin " + _ownerMetadata.Name + " v" + _ownerMetadata.Version);
-                        writer.WriteLine("## Plugin GUID: " + _ownerMetadata.GUID);
                         writer.WriteLine();
+                        line.Entry?.WriteDescription(writer);
+                        writer.WriteLine(line.Key.Key + " = " + line.Value);
                     }
-                    foreach (var section in lines.GroupBy(x => x.Key.Section).OrderBy(x => x.Key))
-                    {
-                        writer.WriteLine("[" + section.Key + "]");
-                        foreach (var line in section)
-                        {
-                            writer.WriteLine();
-                            line.Entry?.WriteDescription(writer);
-                            writer.WriteLine(line.Key.Key + " = " + line.Value);
-                        }
-                        writer.WriteLine();
-                    }
+                    writer.WriteLine();
                 }
             }
         }

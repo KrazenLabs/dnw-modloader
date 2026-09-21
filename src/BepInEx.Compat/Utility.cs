@@ -131,6 +131,11 @@ namespace BepInEx
                 fileStream = null;
                 return false;
             }
+            catch (UnauthorizedAccessException)
+            {
+                fileStream = null;
+                return false;
+            }
         }
 
         public static bool TryParseAssemblyName(string fullName, out AssemblyName assemblyName)

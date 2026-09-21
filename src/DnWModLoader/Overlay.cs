@@ -23,6 +23,7 @@ namespace DnWModLoader
         private readonly float _bannerUntil;
         private readonly bool _showDirect3D12Warning;
         private readonly bool _showParallelLoaderWarning;
+        private readonly bool _showWriteProtectionWarning;
 
         private bool _visible;
         private int _tab = SettingsTab;
@@ -45,6 +46,7 @@ namespace DnWModLoader
             _bannerUntil = _config.ShowStartupBanner ? Time.realtimeSinceStartup + Mathf.Max(1f, _config.StartupBannerSeconds) : 0f;
             _showDirect3D12Warning = Direct3D12Warning.Applies();
             _showParallelLoaderWarning = ParallelLoaderWarning.Applies();
+            _showWriteProtectionWarning = WriteProtectionWarning.Applies();
         }
 
         public bool Visible
@@ -141,6 +143,7 @@ namespace DnWModLoader
             try { game = Application.productName + " " + Application.version + " | Unity " + Application.unityVersion; }
             catch { game = "?"; }
             GUILayout.Label(game + " | " + loaded + " loaded, " + failed + " failed, " + skipped + " skipped, " + disabled + " disabled", _dimStyle);
+            if (_showWriteProtectionWarning) GUILayout.Label(WriteProtectionWarning.Banner, _errorStyle);
 
             switch (_tab)
             {
@@ -276,7 +279,8 @@ namespace DnWModLoader
             DrawBanner(0, StartupBannerText(), _bannerStyle);
             int line = 1;
             if (_showDirect3D12Warning) DrawBanner(line++, Direct3D12Warning.Banner, _warningBannerStyle);
-            if (_showParallelLoaderWarning) DrawBanner(line, ParallelLoaderWarning.Banner, _warningBannerStyle);
+            if (_showParallelLoaderWarning) DrawBanner(line++, ParallelLoaderWarning.Banner, _warningBannerStyle);
+            if (_showWriteProtectionWarning) DrawBanner(line, WriteProtectionWarning.Banner, _warningBannerStyle);
         }
 
         private void DrawBanner(int line, string text, GUIStyle style)
