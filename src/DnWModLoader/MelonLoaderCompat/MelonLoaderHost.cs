@@ -113,7 +113,7 @@ namespace DnWModLoader.MelonLoaderCompat
 
         private static void LoadFile(string path)
         {
-            var searchDirectories = new List<string> { ModLoader.LoaderDirectory, ModLoader.ManagedDirectory, Path.GetDirectoryName(path) };
+            var searchDirectories = new List<string> { ModLoader.LoaderDirectory, ModLoader.ManagedDirectory, Path.GetDirectoryName(path), MelonUtils.UserLibsDirectoryValue };
             foreach (var missing in ReferenceScan.Scan(path, searchDirectories))
                 Log(LoaderLogLevel.Warning, Path.GetFileName(path) + " references " + missing + ", which is not implemented. "
                                         + "Please report this together with the name and version of the mod you were using.");
