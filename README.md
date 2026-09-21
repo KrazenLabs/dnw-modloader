@@ -8,26 +8,19 @@ It loads mod DLLs from a `Mods` folder next to the game, gives them a small API 
 
 ## Install
 
-1. Download the most recent [release](https://github.com/KrazenLabs/dnw-modloader/releases).
-2. Extract it into the game folder next to the `DragNWash.exe`.
-3. Set the game to start in Direct3D 11 by setting the -force-d3d11 launch option (On Steam: Properties > General > Launch Options).
-4. Start the game as usual.
+Download the [latest version of the DnW Mod Manager](https://github.com/KrazenLabs/dnw-modmanager/releases/latest), which will automatically install the mod loader for you!
 
 ## BepInEx plugins (experimental)
 
 The loader can also run BepInEx 5 plugins through a compatibility layer.
 
-- Install the plugin as you would normally with BepInEx (usually: extract its zip into the game folder, so the DLL ends up in `BepInEx/plugins`).
-- Do not install BepInEx! (make sure the plugin does not bundle it).
-- BepInEx preloader patchers and BepInEx 6 plugins are not yet supported.
+- Only install them through the Mod Manager!
 
 ## MelonLoader mods (experimental)
 
 The loader can also run MelonLoader **mods** through a compatibility layer.
 
-- Drop the mod's `.dll` straight into `Mods/`.
-- Do not install MelonLoader!
-- MelonLoader **plugins** (the `Plugins/` folder) are not yet supported. Let me know if something ends up needing this.
+- Only install them through the Mod Manager!
 
 ## Uninstall
 
