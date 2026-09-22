@@ -63,6 +63,7 @@ namespace DnWModLoader
                 else
                 {
                     _cursor.Restore();
+                    _settings.CancelKeyPick();
                     GUI.FocusControl(null);
                     if (_updateNotice == NoticeState.Showing) _updateNotice = NoticeState.Done;
                 }
@@ -112,7 +113,7 @@ namespace DnWModLoader
 
         private bool HotkeyBlocked
         {
-            get { return _visible && _settings.TextFieldFocused; }
+            get { return _visible && (_settings.TextFieldFocused || _settings.PickingKey); }
         }
 
         private string Title
@@ -136,7 +137,7 @@ namespace DnWModLoader
             Tabs[ModsTab] = "Mods (" + ModLoader.Mods.Count + ")";
             _tab = GUILayout.Toolbar(_tab, Tabs, GUILayout.Width(300));
             GUILayout.FlexibleSpace();
-            if (GUILayout.Button("Close [" + _hotkey.Name + "]", GUILayout.Width(110))) Visible = false;
+            if (GUILayout.Button("Close [" + _hotkey.Label + "]", GUILayout.Width(110))) Visible = false;
             GUILayout.EndHorizontal();
 
             string game;
@@ -271,7 +272,7 @@ namespace DnWModLoader
             if (failed > 0) text += ", " + failed + " failed";
             if (skipped > 0) text += ", " + skipped + " skipped";
             if (disabled > 0) text += ", " + disabled + " disabled";
-            return text + "   [" + _hotkey.Name + "] settings";
+            return text + "   [" + _hotkey.Label + "] settings";
         }
 
         private void DrawStartupBanner()

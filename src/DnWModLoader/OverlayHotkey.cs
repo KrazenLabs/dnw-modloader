@@ -18,6 +18,8 @@ namespace DnWModLoader
         // Key name
         public string Name { get; private set; }
 
+        public string Label { get { return _useLegacyEvents ? Name : KeyNames.Label(_key); } }
+
         public void Set(string name)
         {
             string text = string.IsNullOrEmpty(name) ? "F10" : name.Trim();

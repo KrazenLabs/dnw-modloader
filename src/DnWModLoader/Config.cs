@@ -33,10 +33,12 @@ namespace DnWModLoader.Config
         public int Order { get; set; }
         // Changing this entry only takes effect after a restart
         public bool RequiresRestart { get; set; }
+        public bool KeyBinding { get; set; }
 
         public static ConfigMeta Range(double min, double max, double step = 0) { return new ConfigMeta { Min = min, Max = max, Step = step }; }
         public static ConfigMeta Choice(params object[] values) { return new ConfigMeta { AcceptableValues = values }; }
         public static ConfigMeta AdvancedEntry() { return new ConfigMeta { Advanced = true }; }
+        public static ConfigMeta KeyBindingEntry() { return new ConfigMeta { KeyBinding = true }; }
 
         public bool HasRange { get { return Min.HasValue && Max.HasValue && Max.Value > Min.Value; } }
     }

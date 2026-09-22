@@ -4,22 +4,27 @@ using System.Globalization;
 using DnWModLoader.Config;
 using DnWModLoader.Logging;
 using UnityEngine;
+using UnityEngine.InputSystem;
 
 namespace DnWModLoader
 {
     internal sealed class SettingsPanel
     {
-        private enum Widget { Toggle, Choice, Slider, Text }
+        private enum Widget { Toggle, Choice, Slider, Text, Key }
 
         private const string LoaderId = "__loader";
         private const string ControlPrefix = "dnw.settings.";
+        private const string HotkeyPickerId = ControlPrefix + "loader.hotkey";
+        private const string KeyboardShortcutTypeName = "BepInEx.Configuration.KeyboardShortcut";
         private const float LabelWidth = 190f;
         private const float ValueFieldWidth = 80f;
+        private const float KeyWidth = 170f;
         private const float ResetWidth = 52f;
         private const float ErrorSeconds = 6f;
 
         private readonly LoaderConfig _loaderConfig;
         private readonly Action _onLoaderConfigChanged;
+        private readonly KeyPicker _picker = new KeyPicker();
         private readonly Dictionary<string, bool> _expanded = new Dictionary<string, bool>();
         private readonly Dictionary<string, string> _editBuffers = new Dictionary<string, string>();
         private readonly Dictionary<string, KeyValuePair<string, float>> _errors = new Dictionary<string, KeyValuePair<string, float>>();
@@ -40,6 +45,13 @@ namespace DnWModLoader
         }
 
         public bool TextFieldFocused { get; private set; }
+
+        public bool PickingKey { get { return _picker.Listening; } }
+
+        public void CancelKeyPick()
+        {
+            _picker.Cancel();
+        }
 
         // Expands one mod, collapses the others
         public void FocusMod(string modId)
@@ -164,6 +176,7 @@ namespace DnWModLoader
                     case Widget.Toggle: DrawToggle(entry); break;
                     case Widget.Choice: DrawChoice(entry, Choices(entry)); break;
                     case Widget.Slider: DrawSlider(entry, controlId); break;
+                    case Widget.Key: DrawKey(entry, controlId); break;
                     default: DrawValueField(entry, controlId, 0f); break;
                 }
             }
@@ -193,6 +206,7 @@ namespace DnWModLoader
         {
             var type = ValueType(entry);
             if (type == typeof(bool)) return Widget.Toggle;
+            if (IsKeyBinding(entry, type)) return Widget.Key;
             // Flag combinations are typed as text, e.g. "Warning, Error"
             if ((type.IsEnum && !type.IsDefined(typeof(FlagsAttribute), false)) || (entry.Meta.AcceptableValues != null && entry.Meta.AcceptableValues.Length > 0)) return Widget.Choice;
             if (ConfigEntryBase.IsNumericType(type) && entry.Meta.HasRange) return Widget.Slider;
@@ -202,6 +216,61 @@ namespace DnWModLoader
         private static Type ValueType(ConfigEntryBase entry)
         {
             return Nullable.GetUnderlyingType(entry.ValueType) ?? entry.ValueType;
+        }
+
+        private static bool IsKeyBinding(ConfigEntryBase entry, Type type)
+        {
+            if (type == typeof(Key) || type == typeof(KeyCode) || type.FullName == KeyboardShortcutTypeName) return true;
+            return entry.Meta.KeyBinding && (type == typeof(string) || type.IsEnum);
+        }
+
+        private void DrawKey(ConfigEntryBase entry, string controlId)
+        {
+            if (DrawKeyPicker(controlId, KeyLabel(entry), out Key key)) AssignKey(entry, key, controlId);
+        }
+
+        private bool DrawKeyPicker(string id, string label, out Key key)
+        {
+            bool picked = _picker.Draw(id, label, KeyWidth, out key);
+            GUILayout.Label(_picker.IsListening(id) ? "Esc cancels" : "", _small, GUILayout.ExpandWidth(true));
+            return picked;
+        }
+
+        private static string KeyLabel(ConfigEntryBase entry)
+        {
+            object value = entry.BoxedValue;
+            if (value is Key key) return KeyNames.Label(key);
+            if (value is KeyCode code) return KeyNames.Label(code);
+            return KeyNames.Label(entry.ValueToDisplayString());
+        }
+
+        private void AssignKey(ConfigEntryBase entry, Key key, string controlId)
+        {
+            var type = ValueType(entry);
+            bool assigned;
+            if (type == typeof(Key)) assigned = TryAssign(entry, key);
+            else if (type == typeof(KeyCode)) assigned = KeyNames.TryToKeyCode(key, out var code) && TryAssign(entry, code);
+            else if (type.FullName == KeyboardShortcutTypeName) assigned = KeyNames.TryToKeyCode(key, out var mainKey) && entry.TrySetFromString(mainKey.ToString(), out _);
+            else assigned = Acceptable(entry, key.ToString()) && entry.TrySetFromString(key.ToString(), out _);
+
+            if (assigned) _errors.Remove(controlId);
+            else _errors[controlId] = new KeyValuePair<string, float>(KeyNames.Label(key) + " cannot be used for this setting.", Time.realtimeSinceStartup);
+        }
+
+        private static bool TryAssign(ConfigEntryBase entry, object value)
+        {
+            if (!Acceptable(entry, value)) return false;
+            entry.BoxedValue = value;
+            return true;
+        }
+
+        private static bool Acceptable(ConfigEntryBase entry, object value)
+        {
+            var values = entry.Meta.AcceptableValues;
+            if (values == null || values.Length == 0) return true;
+            foreach (var candidate in values)
+                if (Equals(candidate, value) || (candidate != null && value != null && candidate.ToString() == value.ToString())) return true;
+            return false;
         }
 
         private static Array Choices(ConfigEntryBase entry)
@@ -315,11 +384,13 @@ namespace DnWModLoader
 
             GUILayout.BeginHorizontal();
             GUILayout.Label("Overlay hotkey", GUILayout.Width(LabelWidth));
-            GUI.SetNextControlName(ControlPrefix + "loader.hotkey");
-            string hotkey = GUILayout.TextField(c.OverlayHotkey ?? "", GUILayout.Width(120));
-            if (hotkey != c.OverlayHotkey) { c.OverlayHotkey = hotkey; changed = true; }
-            GUILayout.Label("Unity Input System key name, e.g. F10, F9, Backquote, Insert", _small);
+            if (DrawKeyPicker(HotkeyPickerId, KeyNames.Label(c.OverlayHotkey), out Key hotkey) && hotkey.ToString() != c.OverlayHotkey)
+            {
+                c.OverlayHotkey = hotkey.ToString();
+                changed = true;
+            }
             GUILayout.EndHorizontal();
+            if (_showDescriptions) GUILayout.Label("Opens and closes this window.", _dim);
 
             GUILayout.BeginHorizontal();
             GUILayout.Label("Startup banner", GUILayout.Width(LabelWidth));
