@@ -37,6 +37,7 @@ namespace DnWModLoader
         private static readonly List<string> ResolveDirectories = new List<string>();
         private static readonly List<string> SetupProblems = new List<string>();
         private static ModContainer[] _loadedCache = new ModContainer[0];
+        private static bool _loadedCacheDirty;
         private static bool _sceneEventsHooked;
 
         public static string GameDirectory { get; private set; }
@@ -91,7 +92,7 @@ namespace DnWModLoader
         // Returns the loaded mod instance
         public static T GetMod<T>() where T : Mod
         {
-            foreach (var c in _loadedCache)
+            foreach (var c in LoadedMods)
                 if (c.Instance is T typed) return typed;
             return null;
         }
@@ -133,6 +134,7 @@ namespace DnWModLoader
             HookUnityLog();
             AppDomain.CurrentDomain.AssemblyResolve += OnAssemblyResolve;
             AppDomain.CurrentDomain.UnhandledException += OnUnhandledException;
+            EnsureBehaviour("SubsystemRegistration");
 
             try
             {
@@ -170,11 +172,8 @@ namespace DnWModLoader
             Logger.Info("Initialization finished in " + stopwatch.ElapsedMilliseconds + " ms: " + loaded + " loaded, " + failed + " failed, " + skipped + " skipped, " + disabled + " disabled"
                         + (waiting > 0 ? ", " + waiting + " hosted plugin(s)/mod(s) found." : "."));
 
-            try { ModsInitialized?.Invoke(); }
-            catch (Exception e) { Logger.Exception(e, "ModsInitialized exception"); }
-
+            RaiseModsInitialized();
             HookSceneEvents();
-            EnsureBehaviour("SubsystemRegistration");
 
             if (!Preloader.AfterRegistrationHooked)
             {
@@ -186,8 +185,26 @@ namespace DnWModLoader
         internal static void AfterRegistration()
         {
             string phase = Preloader.AfterRegistrationPhase ?? "a later initializer";
+            EnsureBehaviour(phase);
             StartBepInExPlugins(phase);
             StartMelons(phase);
+        }
+
+        private static void RaiseModsInitialized()
+        {
+            var handlers = ModsInitialized;
+            if (handlers == null) return;
+            foreach (Action handler in handlers.GetInvocationList())
+            {
+                try { handler(); }
+                catch (Exception e) { Logger.Exception(e, "ModsInitialized in " + HandlerOwner(handler) + " threw"); }
+            }
+        }
+
+        private static string HandlerOwner(Delegate handler)
+        {
+            var type = handler.Method.DeclaringType;
+            return type == null ? handler.Method.Name : type.Assembly.GetName().Name + " (" + type.FullName + "." + handler.Method.Name + ")";
         }
 
         internal static void GameStarted()
@@ -195,7 +212,7 @@ namespace DnWModLoader
             if (Phase >= LoaderPhase.Running) return;
             Phase = LoaderPhase.Running;
             Logger.Info("First scene loaded: " + SafeActiveSceneName() + ". Game is running.");
-            Dispatch("OnGameStarted", GameStartedAction);
+            Dispatch(nameof(Mod.OnGameStarted), GameStartedAction);
         }
 
         internal static void Shutdown()
@@ -210,7 +227,6 @@ namespace DnWModLoader
         }
 
         private static readonly Action<Mod> GameStartedAction = m => m.OnGameStarted();
-        private static readonly Action<Mod> AllModsInitializedAction = m => m.OnAllModsInitialized();
 
         private static string SafeActiveSceneName()
         {
@@ -506,6 +522,7 @@ namespace DnWModLoader
         internal static void AddExternalMod(ModContainer container)
         {
             ModList.Add(container);
+            InvalidateLoadedCache();
         }
 
         internal static bool ClaimModId(ModContainer container, out string owner)
@@ -654,19 +671,10 @@ namespace DnWModLoader
             ModList.Clear();
             ModList.AddRange(ordered);
             ModList.AddRange(rest);
+            InvalidateLoadedCache();
 
             foreach (var container in ordered) InitializeMod(container);
-            RefreshLoadedCache();
-
-            foreach (var container in _loadedCache)
-            {
-                try { container.Instance.OnAllModsInitialized(); }
-                catch (Exception e)
-                {
-                    container.Error = "OnAllModsInitialized threw: " + e.GetType().Name + ": " + e.Message;
-                    Logger.Exception(e, "Mod " + container.Info.Id + " threw in OnAllModsInitialized");
-                }
-            }
+            Dispatch(nameof(Mod.OnAllModsInitialized), m => m.OnAllModsInitialized());
 
             foreach (var container in ModList)
             {
@@ -1099,14 +1107,27 @@ namespace DnWModLoader
             }
         }
 
-        internal static void RefreshLoadedCache()
+        internal static void InvalidateLoadedCache()
         {
-            _loadedCache = ModList.Where(c => c.CallbacksEnabled).ToArray();
+            _loadedCacheDirty = true;
+        }
+
+        private static ModContainer[] LoadedMods
+        {
+            get
+            {
+                if (_loadedCacheDirty)
+                {
+                    _loadedCacheDirty = false;
+                    _loadedCache = ModList.Where(c => c.CallbacksEnabled).ToArray();
+                }
+                return _loadedCache;
+            }
         }
 
         internal static void Dispatch(string callback, Action<Mod> action)
         {
-            var mods = _loadedCache;
+            var mods = LoadedMods;
             for (int i = 0; i < mods.Length; i++)
             {
                 var container = mods[i];
@@ -1114,13 +1135,18 @@ namespace DnWModLoader
                 try
                 {
                     action(container.Instance);
-                    container.ResetFailures(callback);
                 }
-                catch (Exception e)
+                catch (Exception e) when (!IsExitGuiException(e))
                 {
                     container.RecordFailure(callback, e);
                 }
             }
+        }
+
+        internal static bool IsExitGuiException(Exception e)
+        {
+            while (e is TargetInvocationException && e.InnerException != null) e = e.InnerException;
+            return e is ExitGUIException;
         }
 
         internal static void EnsureBehaviour(string phase)
@@ -1150,12 +1176,12 @@ namespace DnWModLoader
                 {
                     Logger.Debug("Scene loaded: " + scene.name + " (" + mode + ")");
                     EnsureBehaviour("scene load");
-                    Dispatch("OnSceneLoaded", m => m.OnSceneLoaded(scene, mode));
+                    Dispatch(nameof(Mod.OnSceneLoaded), m => m.OnSceneLoaded(scene, mode));
                 };
                 SceneManager.sceneUnloaded += scene =>
                 {
                     Logger.Debug("Scene unloaded: " + scene.name);
-                    Dispatch("OnSceneUnloaded", m => m.OnSceneUnloaded(scene));
+                    Dispatch(nameof(Mod.OnSceneUnloaded), m => m.OnSceneUnloaded(scene));
                 };
             }
             catch (Exception e)

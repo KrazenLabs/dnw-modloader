@@ -1,4 +1,7 @@
 using System;
+using System.Collections.Generic;
+using System.Diagnostics;
+using System.Globalization;
 using System.Reflection;
 using DnWModLoader.Config;
 using DnWModLoader.Logging;
@@ -127,12 +130,50 @@ namespace DnWModLoader
         Failed,
     }
 
-    public sealed partial class ModContainer
+    public sealed class ModContainer
     {
+        private const int FailuresBeforeDisable = 10;
+        private const double FailureWindowSeconds = 10;
+        private const int FailuresLoggedInFull = 3;
+        private static readonly Stopwatch FailureClock = Stopwatch.StartNew();
+
+        private sealed class CallbackFailures
+        {
+            public int Total;
+            public int InWindow;
+            public double WindowStart;
+        }
+
+        private ModStatus _status;
+        private Mod _instance;
+        private Dictionary<string, CallbackFailures> _failures;
+        private HashSet<string> _disabledCallbacks;
+
         public ModInfo Info { get; internal set; }
-        public ModStatus Status { get; internal set; }
+
+        public ModStatus Status
+        {
+            get { return _status; }
+            internal set
+            {
+                if (_status == value) return;
+                _status = value;
+                ModLoader.InvalidateLoadedCache();
+            }
+        }
+
         // null when mod is not loaded
-        public Mod Instance { get; internal set; }
+        public Mod Instance
+        {
+            get { return _instance; }
+            internal set
+            {
+                if (ReferenceEquals(_instance, value)) return;
+                _instance = value;
+                ModLoader.InvalidateLoadedCache();
+            }
+        }
+
         public Assembly Assembly { get; internal set; }
         public Type EntryType { get; internal set; }
         public string Error { get; internal set; }
@@ -146,5 +187,50 @@ namespace DnWModLoader
         internal bool CallbacksEnabled { get { return Status == ModStatus.Loaded && Instance != null; } }
 
         public override string ToString() { return (Info != null ? Info.ToString() : "?") + " [" + Status + "]"; }
+
+        internal bool IsCallbackDisabled(string callback)
+        {
+            return _disabledCallbacks != null && _disabledCallbacks.Contains(callback);
+        }
+
+        internal void RecordFailure(string callback, Exception e)
+        {
+            double now = FailureClock.Elapsed.TotalSeconds;
+            if (_failures == null) _failures = new Dictionary<string, CallbackFailures>();
+            if (!_failures.TryGetValue(callback, out var failures)) _failures[callback] = failures = new CallbackFailures();
+            if (failures.InWindow == 0 || now - failures.WindowStart > FailureWindowSeconds)
+            {
+                failures.WindowStart = now;
+                failures.InWindow = 0;
+            }
+            failures.Total++;
+            failures.InWindow++;
+
+            string id = Info != null ? Info.Id : "?";
+            string brief = ModLogger.Brief(e);
+            if (string.IsNullOrEmpty(Error)) Error = callback + " threw: " + brief;
+
+            bool disable = failures.InWindow >= FailuresBeforeDisable && !IsCallbackDisabled(callback);
+            if (failures.Total <= FailuresLoggedInFull)
+                ModLoader.Logger.Exception(e, "Mod " + id + " threw in " + callback + " (" + failures.Total + ")");
+            else if (!disable && IsPowerOfTen(failures.Total))
+                ModLoader.Logger.Error("Mod " + id + " threw in " + callback + " again: " + brief + " (×" + failures.Total + ")");
+
+            if (disable)
+            {
+                if (_disabledCallbacks == null) _disabledCallbacks = new HashSet<string>();
+                _disabledCallbacks.Add(callback);
+                string within = (now - failures.WindowStart).ToString("0.0", CultureInfo.InvariantCulture) + " s";
+                Error = callback + " disabled after " + failures.InWindow + " errors within " + within + ": " + brief;
+                ModLoader.Logger.Error("Mod " + id + ": " + callback + " disabled after " + failures.InWindow + " errors within " + within + ".");
+            }
+        }
+
+        private static bool IsPowerOfTen(int value)
+        {
+            if (value < 10) return false;
+            while (value % 10 == 0) value /= 10;
+            return value == 1;
+        }
     }
 }

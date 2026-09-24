@@ -262,6 +262,7 @@ namespace DnWModLoader.Config
         private static readonly List<ModConfig> Registry = new List<ModConfig>();
         private static readonly object RegistrySync = new object();
         private static readonly TimeSpan SaveDelay = TimeSpan.FromSeconds(0.5);
+        private static volatile bool _savesPending;
 
         private readonly object _sync = new object();
         private readonly Dictionary<string, ConfigEntryBase> _entries = new Dictionary<string, ConfigEntryBase>(StringComparer.Ordinal);
@@ -310,12 +311,16 @@ namespace DnWModLoader.Config
         // Writes pending config changes
         public static void FlushPending()
         {
+            if (!_savesPending) return;
+            _savesPending = false;
             ModConfig[] configs;
             lock (RegistrySync) configs = Registry.ToArray();
             var now = DateTime.UtcNow;
             foreach (var config in configs)
             {
-                if (config._dirty && now - config._dirtyAt >= SaveDelay) config.Save();
+                if (!config._dirty) continue;
+                if (now - config._dirtyAt >= SaveDelay) config.Save();
+                else _savesPending = true;
             }
         }
 
@@ -499,6 +504,7 @@ namespace DnWModLoader.Config
         {
             _dirty = true;
             _dirtyAt = DateTime.UtcNow;
+            _savesPending = true;
         }
 
         private void LoadDocument()

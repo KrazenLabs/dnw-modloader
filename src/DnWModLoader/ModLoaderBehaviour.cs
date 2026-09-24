@@ -1,5 +1,4 @@
 using System;
-using System.Collections.Generic;
 using UnityEngine;
 
 namespace DnWModLoader
@@ -38,7 +37,7 @@ namespace DnWModLoader
             if (!_started) return;
             try { Overlay?.Update(); }
             catch (Exception e) { ReportOverlayFailure(e); }
-            ModLoader.Dispatch("OnUpdate", UpdateAction);
+            ModLoader.Dispatch(nameof(Mod.OnUpdate), UpdateAction);
             try { DnWModLoader.Config.ModConfig.FlushPending(); }
             catch (Exception e) { ModLoader.Logger.Exception(e, "Saving configs failed"); }
         }
@@ -46,7 +45,7 @@ namespace DnWModLoader
         private void FixedUpdate()
         {
             if (!_started) return;
-            ModLoader.Dispatch("OnFixedUpdate", FixedUpdateAction);
+            ModLoader.Dispatch(nameof(Mod.OnFixedUpdate), FixedUpdateAction);
         }
 
         private void LateUpdate()
@@ -54,20 +53,20 @@ namespace DnWModLoader
             if (!_started) return;
             try { Overlay?.LateUpdate(); }
             catch (Exception e) { ReportOverlayFailure(e); }
-            ModLoader.Dispatch("OnLateUpdate", LateUpdateAction);
+            ModLoader.Dispatch(nameof(Mod.OnLateUpdate), LateUpdateAction);
         }
 
         private void OnGUI()
         {
             if (!_started) return;
             try { Overlay?.OnGUI(); }
-            catch (Exception e) { ReportOverlayFailure(e); }
-            ModLoader.Dispatch("OnGUI", GuiAction);
+            catch (Exception e) when (!ModLoader.IsExitGuiException(e)) { ReportOverlayFailure(e); }
+            ModLoader.Dispatch(nameof(Mod.OnGUI), GuiAction);
         }
 
         private void OnApplicationQuit()
         {
-            ModLoader.Dispatch("OnApplicationQuit", QuitAction);
+            ModLoader.Dispatch(nameof(Mod.OnApplicationQuit), QuitAction);
             try { DnWModLoader.Config.ModConfig.FlushAll(); }
             catch (Exception e) { ModLoader.Logger.Exception(e, "Saving configs on quit failed"); }
             ModLoader.Shutdown();
@@ -86,43 +85,6 @@ namespace DnWModLoader
             {
                 ModLoader.Logger.Error("Overlay disabled after repeated errors.");
                 Overlay = null;
-            }
-        }
-    }
-
-    // Mod failure tracking
-    public sealed partial class ModContainer
-    {
-        private const int FailuresBeforeDisable = 10;
-        private Dictionary<string, int> _failures;
-        private HashSet<string> _disabledCallbacks;
-
-        internal bool IsCallbackDisabled(string callback)
-        {
-            return _disabledCallbacks != null && _disabledCallbacks.Contains(callback);
-        }
-
-        internal void ResetFailures(string callback)
-        {
-            if (_failures != null && _failures.Count > 0) _failures.Remove(callback);
-        }
-
-        internal void RecordFailure(string callback, Exception e)
-        {
-            if (_failures == null) _failures = new Dictionary<string, int>();
-            _failures.TryGetValue(callback, out int count);
-            count++;
-            _failures[callback] = count;
-
-            if (count <= 3)
-                ModLoader.Logger.Exception(e, "Mod " + Info.Id + " threw in " + callback + " (" + count + ")");
-
-            if (count >= FailuresBeforeDisable)
-            {
-                if (_disabledCallbacks == null) _disabledCallbacks = new HashSet<string>();
-                _disabledCallbacks.Add(callback);
-                Error = callback + " disabled after " + count + " consecutive errors: " + e.GetType().Name + ": " + e.Message;
-                ModLoader.Logger.Error("Mod " + Info.Id + ": " + callback + " disabled after " + count + " consecutive errors.");
             }
         }
     }

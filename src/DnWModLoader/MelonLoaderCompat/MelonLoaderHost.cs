@@ -46,8 +46,6 @@ namespace DnWModLoader.MelonLoaderCompat
             var ordered = Adapters.OrderBy(a => a.Melon.Priority).ToList();
             foreach (var adapter in ordered) Initialize(adapter);
 
-            ModLoader.RefreshLoadedCache();
-
             // Global MelonEvents
             var pump = ordered.FirstOrDefault(a => a.Active);
             if (pump != null) pump.IsEventPump = true;
@@ -56,7 +54,7 @@ namespace DnWModLoader.MelonLoaderCompat
 
             Raise(MelonEvents.OnApplicationStart);
             Raise(MelonEvents.OnApplicationLateStart);
-            foreach (var adapter in ordered) Safe(adapter, "OnLateInitializeMelon", () => adapter.Melon.OnLateInitializeMelon());
+            foreach (var adapter in ordered) Safe(adapter, nameof(MelonMod.OnLateInitializeMelon), () => adapter.Melon.OnLateInitializeMelon());
 
             ModLoader.Logger.Debug("MelonLoader mods started during " + phase + " in " + stopwatch.Elapsed.TotalMilliseconds.ToString("0") + " ms.");
         }
