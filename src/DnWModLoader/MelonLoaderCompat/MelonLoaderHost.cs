@@ -75,6 +75,7 @@ namespace DnWModLoader.MelonLoaderCompat
             MelonLoader.Utils.MelonEnvironment.LoaderDirectory = ModLoader.LoaderDirectory;
 
             MelonPreferences.DefaultFilePath = Path.Combine(MelonUtils.UserDataDirectoryValue, "MelonPreferences.cfg");
+            UnityPreferenceMappers.Register();
 
             MelonCoroutines.Starter = StartCoroutine;
             MelonCoroutines.Stopper = StopCoroutine;
@@ -235,6 +236,7 @@ namespace DnWModLoader.MelonLoaderCompat
                 container.PatchedMethodCount = melon.HarmonyInstance.GetPatchedMethods().Count();
                 container.Status = ModStatus.Loaded;
                 container.Error = null;
+                SubscribePreferenceCallbacks(adapter);
             }
             catch (Exception e)
             {
@@ -249,6 +251,30 @@ namespace DnWModLoader.MelonLoaderCompat
             {
                 container.InitializeMilliseconds = stopwatch.Elapsed.TotalMilliseconds;
             }
+        }
+
+        private static void SubscribePreferenceCallbacks(MelonModAdapter adapter)
+        {
+            var melon = adapter.Melon;
+            MelonPreferences.OnPreferencesSaved.Subscribe(path =>
+            {
+                if (!adapter.Active) return;
+                Safe(adapter, nameof(MelonBase.OnPreferencesSaved), () =>
+                {
+                    melon.OnPreferencesSaved(path);
+                    melon.OnPreferencesSaved();
+                    melon.OnModSettingsApplied();
+                });
+            }, melon.Priority);
+            MelonPreferences.OnPreferencesLoaded.Subscribe(path =>
+            {
+                if (!adapter.Active) return;
+                Safe(adapter, nameof(MelonBase.OnPreferencesLoaded), () =>
+                {
+                    melon.OnPreferencesLoaded(path);
+                    melon.OnPreferencesLoaded();
+                });
+            }, melon.Priority);
         }
 
         // -- metadata ------------------------------------------------------------------------

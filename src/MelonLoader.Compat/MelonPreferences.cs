@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Text;
 using MelonLoader.Preferences;
 using Tomlet;
 using Tomlet.Models;
@@ -70,10 +71,13 @@ namespace MelonLoader
         public virtual object BoxedValue { get; set; }
         public virtual object BoxedEditedValue { get; set; }
 
+        public readonly MelonEvent<object, object> OnEntryValueChangedUntyped = new MelonEvent<object, object>();
+
         public event Action OnValueChangedUntyped;
 
         protected void FireUntypedValueChanged(object old, object neew)
         {
+            OnEntryValueChangedUntyped.Invoke(old, neew);
             var handler = OnValueChangedUntyped;
             if (handler == null) return;
             try { handler(); }
@@ -137,10 +141,13 @@ namespace MelonLoader
             set { if (value is T) _editedValue = (T)value; }
         }
 
+        public readonly MelonEvent<T, T> OnEntryValueChanged = new MelonEvent<T, T>();
+
         public event Action<T, T> OnValueChanged;
 
         private void FireValueChanged(T old, T neew)
         {
+            OnEntryValueChanged.Invoke(old, neew);
             var handler = OnValueChanged;
             if (handler != null)
             {
@@ -168,7 +175,7 @@ namespace MelonLoader
         {
             try
             {
-                _editedValue = _value;
+                Value = _editedValue;
                 return TomletMain.ValueFrom(_value);
             }
             catch (Exception e)
@@ -207,8 +214,14 @@ namespace MelonLoader
         {
             if (string.IsNullOrEmpty(identifier)) throw new ArgumentNullException("identifier");
 
-            var existing = GetEntry<T>(identifier);
-            if (existing != null) return existing;
+            var existing = GetEntry(identifier);
+            if (existing != null)
+            {
+                var typed = existing as MelonPreferences_Entry<T>;
+                if (typed != null) return typed;
+                throw new InvalidOperationException("Preference '" + identifier + "' of category '" + Identifier + "' already exists as "
+                                                    + existing.GetReflectedType().FullName + " and cannot be created again as " + typeof(T).FullName + ".");
+            }
 
             if (validator != null && !validator.IsValid(default_value))
                 default_value = (T)validator.EnsureValid(default_value);
@@ -282,12 +295,20 @@ namespace MelonLoader
     public static class MelonPreferences
     {
         public static readonly List<MelonPreferences_Category> Categories = new List<MelonPreferences_Category>();
+        public static readonly MelonEvent<string> OnPreferencesLoaded = new MelonEvent<string>();
+        public static readonly MelonEvent<string> OnPreferencesSaved = new MelonEvent<string>();
 
         internal static string DefaultFilePath;
-        internal static Action<MelonPreferences_Category, string> Saved;
-        internal static Action<MelonPreferences_Category, string> Loaded;
 
-        private static readonly Dictionary<string, TomlDocument> Documents = new Dictionary<string, TomlDocument>(StringComparer.OrdinalIgnoreCase);
+        private sealed class PreferencesFile
+        {
+            public string Path;
+            public TomlDocument Document;
+            public string ReadError;
+            public bool SaveRefusalLogged;
+        }
+
+        private static readonly Dictionary<string, PreferencesFile> Files = new Dictionary<string, PreferencesFile>(StringComparer.OrdinalIgnoreCase);
 
         public static MelonPreferences_Category CreateCategory(string identifier) { return CreateCategory(identifier, null, false, false); }
         public static MelonPreferences_Category CreateCategory(string identifier, string display_name) { return CreateCategory(identifier, display_name, false, false); }
@@ -348,16 +369,23 @@ namespace MelonLoader
 
         public static void Load()
         {
-            MelonPreferences_Category[] all;
-            lock (Categories) all = Categories.ToArray();
-            foreach (var category in all) LoadCategoryInternal(category, false);
+            foreach (var group in CategoriesByFile(true))
+            {
+                var file = FileFor(group.Key, true);
+                if (file.ReadError != null) continue;
+                foreach (var category in group.Value) ApplyFile(file, category);
+                OnPreferencesLoaded.Invoke(file.Path);
+            }
         }
 
         public static void Save()
         {
-            MelonPreferences_Category[] all;
-            lock (Categories) all = Categories.ToArray();
-            foreach (var category in all) SaveCategoryInternal(category, false);
+            foreach (var group in CategoriesByFile(false))
+            {
+                var file = FileFor(group.Key, false);
+                foreach (var category in group.Value) StoreCategory(file, category);
+                WriteFile(file);
+            }
         }
 
         public static void SaveCategory<T>(string category_identifier, bool printmsg = true)
@@ -368,8 +396,10 @@ namespace MelonLoader
 
         public static void RemoveCategoryFromFile(string filepath, string category_identifier)
         {
-            Documents.Remove(ResolvePath(filepath));
-            Save();
+            string path = ResolvePath(filepath);
+            if (string.IsNullOrEmpty(path) || string.IsNullOrEmpty(category_identifier)) return;
+            var file = FileFor(path, false);
+            if (file.Document.Entries.Remove(category_identifier)) WriteFile(file);
         }
 
         private static string ResolvePath(string path) { return string.IsNullOrEmpty(path) ? DefaultFilePath : Path.GetFullPath(path); }
@@ -379,25 +409,149 @@ namespace MelonLoader
             return !string.IsNullOrEmpty(category.FilePath) ? Path.GetFullPath(category.FilePath) : DefaultFilePath;
         }
 
-        private static TomlDocument DocumentFor(string path, bool reread)
+        private static List<KeyValuePair<string, List<MelonPreferences_Category>>> CategoriesByFile(bool includeDefault)
         {
-            if (string.IsNullOrEmpty(path)) return TomlDocument.CreateEmpty();
+            MelonPreferences_Category[] all;
+            lock (Categories) all = Categories.ToArray();
+            var groups = new List<KeyValuePair<string, List<MelonPreferences_Category>>>();
+            if (includeDefault && !string.IsNullOrEmpty(DefaultFilePath)) groups.Add(new KeyValuePair<string, List<MelonPreferences_Category>>(DefaultFilePath, new List<MelonPreferences_Category>()));
+            foreach (var category in all)
+            {
+                string path = PathFor(category);
+                if (string.IsNullOrEmpty(path)) continue;
+                int index = groups.FindIndex(g => string.Equals(g.Key, path, StringComparison.OrdinalIgnoreCase));
+                if (index < 0)
+                {
+                    groups.Add(new KeyValuePair<string, List<MelonPreferences_Category>>(path, new List<MelonPreferences_Category>()));
+                    index = groups.Count - 1;
+                }
+                groups[index].Value.Add(category);
+            }
+            return groups;
+        }
 
-            TomlDocument document;
-            if (!reread && Documents.TryGetValue(path, out document)) return document;
+        private static PreferencesFile FileFor(string path, bool reread)
+        {
+            PreferencesFile file;
+            lock (Files)
+            {
+                if (!Files.TryGetValue(path, out file))
+                {
+                    file = new PreferencesFile { Path = path };
+                    Files[path] = file;
+                    reread = true;
+                }
+            }
+            if (reread) Read(file);
+            return file;
+        }
 
+        private static void Read(PreferencesFile file)
+        {
             try
             {
-                document = File.Exists(path) ? new TomlParser().Parse(File.ReadAllText(path)) : TomlDocument.CreateEmpty();
+                file.Document = File.Exists(file.Path) ? new TomlParser().Parse(File.ReadAllText(file.Path)) : TomlDocument.CreateEmpty();
+                file.ReadError = null;
+                file.SaveRefusalLogged = false;
             }
             catch (Exception e)
             {
-                MelonLogger.Warning("Could not read " + path + ": " + e.Message);
-                document = TomlDocument.CreateEmpty();
+                bool first = file.ReadError == null;
+                file.ReadError = e.Message;
+                if (file.Document == null) file.Document = TomlDocument.CreateEmpty();
+                if (!first) return;
+                string backup = file.Path + ".broken";
+                bool copied;
+                try { File.Copy(file.Path, backup, true); copied = true; }
+                catch { copied = false; }
+                MelonLogger.Error("Could not read " + file.Path + " (" + e.Message + "). Using defaults."
+                                   + (copied ? "a copy was saved as " + Path.GetFileName(backup) : "") + ".");
             }
+        }
 
-            Documents[path] = document;
-            return document;
+        private static bool WriteFile(PreferencesFile file)
+        {
+            if (file.ReadError != null)
+            {
+                if (!file.SaveRefusalLogged)
+                {
+                    file.SaveRefusalLogged = true;
+                    MelonLogger.Warning("Not saving " + file.Path + " due to a read failure (" + file.ReadError + ").");
+                }
+                return false;
+            }
+            try
+            {
+                WriteSafely(file.Path, file.Document.SerializedValue);
+            }
+            catch (Exception e)
+            {
+                MelonLogger.Error("Could not save " + file.Path + ": " + e.Message);
+                return false;
+            }
+            OnPreferencesSaved.Invoke(file.Path);
+            return true;
+        }
+
+        private static void WriteSafely(string path, string contents)
+        {
+            string directory = Path.GetDirectoryName(path);
+            if (!string.IsNullOrEmpty(directory)) Directory.CreateDirectory(directory);
+            string temp = path + ".tmp";
+            byte[] bytes = new UTF8Encoding(false).GetBytes(contents);
+            using (var stream = new FileStream(temp, FileMode.Create, FileAccess.Write, FileShare.None))
+            {
+                stream.Write(bytes, 0, bytes.Length);
+                stream.Flush(true);
+            }
+            if (File.Exists(path)) File.Replace(temp, path, null, true);
+            else File.Move(temp, path);
+        }
+
+        private static void ApplyFile(PreferencesFile file, MelonPreferences_Category category)
+        {
+            if (!file.Document.ContainsKey(category.Identifier)) return;
+            try
+            {
+                var table = file.Document.GetSubTable(category.Identifier);
+                MelonPreferences_Entry[] entries;
+                lock (category.Entries) entries = category.Entries.ToArray();
+                foreach (var entry in entries)
+                {
+                    TomlValue value;
+                    if (table != null && table.TryGetValue(entry.Identifier, out value)) entry.Load(value);
+                }
+            }
+            catch (Exception e)
+            {
+                MelonLogger.Warning("Could not load category " + category.Identifier + ": " + e.Message);
+            }
+        }
+
+        private static void StoreCategory(PreferencesFile file, MelonPreferences_Category category)
+        {
+            try
+            {
+                var document = file.Document;
+                var table = document.ContainsKey(category.Identifier) ? document.GetSubTable(category.Identifier) : new TomlTable();
+
+                MelonPreferences_Entry[] entries;
+                lock (category.Entries) entries = category.Entries.ToArray();
+                foreach (var entry in entries)
+                {
+                    var value = entry.Save();
+                    if (value == null) continue;
+                    if (entry.DontSaveDefault && entry.GetValueAsString() == entry.GetDefaultValueAsString()) continue;
+                    if (!string.IsNullOrEmpty(entry.Description)) value.Comments.PrecedingComment = entry.Description;
+                    table.PutValue(entry.Identifier, value, true);
+                }
+
+                if (!document.ContainsKey(category.Identifier)) document.PutValue(category.Identifier, table, true);
+            }
+            catch (Exception e)
+            {
+                MelonLogger.Error("Could not store category " + category.Identifier + " for " + file.Path + ": " + e.Message);
+            }
         }
 
         internal static void ApplyStoredValue(MelonPreferences_Category category, MelonPreferences_Entry entry, string oldIdentifier)
@@ -405,7 +559,7 @@ namespace MelonLoader
             string path = PathFor(category);
             if (string.IsNullOrEmpty(path)) return;
 
-            var document = DocumentFor(path, false);
+            var document = FileFor(path, false).Document;
             if (!document.ContainsKey(category.Identifier)) return;
 
             try
@@ -429,29 +583,16 @@ namespace MelonLoader
             string path = PathFor(category);
             if (string.IsNullOrEmpty(path)) return;
 
-            var document = DocumentFor(path, true);
-            if (document.ContainsKey(category.Identifier))
+            var file = FileFor(path, true);
+            if (file.ReadError != null) return;
+            foreach (var group in CategoriesByFile(false))
             {
-                try
-                {
-                    var table = document.GetSubTable(category.Identifier);
-                    MelonPreferences_Entry[] entries;
-                    lock (category.Entries) entries = category.Entries.ToArray();
-                    foreach (var entry in entries)
-                    {
-                        TomlValue value;
-                        if (table != null && table.TryGetValue(entry.Identifier, out value)) entry.Load(value);
-                    }
-                }
-                catch (Exception e)
-                {
-                    MelonLogger.Warning("Could not load category " + category.Identifier + ": " + e.Message);
-                }
+                if (!string.Equals(group.Key, path, StringComparison.OrdinalIgnoreCase)) continue;
+                foreach (var other in group.Value) ApplyFile(file, other);
             }
 
             if (printmsg) MelonLogger.Msg("Loaded preferences for " + category.DisplayName + ".");
-            var loaded = Loaded;
-            if (loaded != null) loaded(category, path);
+            OnPreferencesLoaded.Invoke(path);
         }
 
         internal static void SaveCategoryInternal(MelonPreferences_Category category, bool printmsg)
@@ -459,37 +600,9 @@ namespace MelonLoader
             string path = PathFor(category);
             if (string.IsNullOrEmpty(path)) return;
 
-            try
-            {
-                var document = DocumentFor(path, false);
-                var table = document.ContainsKey(category.Identifier) ? document.GetSubTable(category.Identifier) : new TomlTable();
-
-                MelonPreferences_Entry[] entries;
-                lock (category.Entries) entries = category.Entries.ToArray();
-                foreach (var entry in entries)
-                {
-                    if (entry.DontSaveDefault && entry.GetValueAsString() == entry.GetDefaultValueAsString()) continue;
-                    var value = entry.Save();
-                    if (value == null) continue;
-                    if (!string.IsNullOrEmpty(entry.Description)) value.Comments.PrecedingComment = entry.Description;
-                    table.PutValue(entry.Identifier, value, true);
-                }
-
-                if (!document.ContainsKey(category.Identifier)) document.PutValue(category.Identifier, table, true);
-
-                string directory = Path.GetDirectoryName(path);
-                if (!string.IsNullOrEmpty(directory)) Directory.CreateDirectory(directory);
-                File.WriteAllText(path, document.SerializedValue);
-            }
-            catch (Exception e)
-            {
-                MelonLogger.Error("Could not save category " + category.Identifier + " to " + path + ": " + e.Message);
-                return;
-            }
-
-            if (printmsg) MelonLogger.Msg("Saved preferences for " + category.DisplayName + ".");
-            var saved = Saved;
-            if (saved != null) saved(category, path);
+            var file = FileFor(path, false);
+            StoreCategory(file, category);
+            if (WriteFile(file) && printmsg) MelonLogger.Msg("Saved preferences for " + category.DisplayName + ".");
         }
     }
 
