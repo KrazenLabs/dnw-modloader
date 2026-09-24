@@ -164,7 +164,7 @@ namespace DnWModLoader
 
         [JsonProperty("name")] public string Name { get; set; }
 
-        [JsonProperty("version")] public string Version { get; set; } = "1.0.0";
+        [JsonProperty("version")] public string Version { get; set; }
 
         [JsonProperty("author")] public string Author { get; set; }
 

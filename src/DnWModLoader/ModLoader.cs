@@ -413,7 +413,6 @@ namespace DnWModLoader
         private sealed class Candidate
         {
             public string Directory;
-            public string ManifestPath;
             public ModManifest Manifest;
             public string AssemblyPath;
             public bool IsBare;
@@ -512,30 +511,100 @@ namespace DnWModLoader
         internal static bool ClaimModId(ModContainer container, out string owner)
         {
             owner = null;
-            if (ModsById.TryGetValue(container.Info.Id, out var existing))
+            string id = container.Info?.Id;
+            if (string.IsNullOrEmpty(id)) return true;
+            if (ModsById.TryGetValue(id, out var existing) && !ReferenceEquals(existing, container) && ClaimRank(container) <= ClaimRank(existing))
             {
                 owner = existing.Info.ToString();
                 return false;
             }
-            ModsById[container.Info.Id] = container;
+            ModsById[id] = container;
             return true;
         }
 
-        private static bool ReferencesBepInEx(string path) { return References(path, "BepInEx"); }
+        private static int ClaimRank(ModContainer container)
+        {
+            switch (container.Status)
+            {
+                case ModStatus.Discovered:
+                case ModStatus.Loaded:
+                    return 2;
+                case ModStatus.Disabled:
+                    return 1;
+                default:
+                    return 0;
+            }
+        }
 
-        private static bool ReferencesMelonLoader(string path) { return References(path, "MelonLoader"); }
+        private enum BareDllKind
+        {
+            Native,
+            DnwMod,
+            BepInExPlugin,
+            Melon,
+            Other,
+        }
 
-        private static bool References(string path, string assemblyName)
+        private static Mono.Cecil.ModuleDefinition ReadModule(string path)
+        {
+            return Mono.Cecil.ModuleDefinition.ReadModule(path, new Mono.Cecil.ReaderParameters { ReadingMode = Mono.Cecil.ReadingMode.Deferred });
+        }
+
+        private static BareDllKind ClassifyBareDll(string path)
         {
             try
             {
-                using (var module = Mono.Cecil.ModuleDefinition.ReadModule(path, new Mono.Cecil.ReaderParameters { ReadingMode = Mono.Cecil.ReadingMode.Deferred }))
-                    return module.AssemblyReferences.Any(r => r.Name == assemblyName);
+                using (var module = ReadModule(path))
+                {
+                    if (DefinesModSubclass(module)) return BareDllKind.DnwMod;
+                    if (module.AssemblyReferences.Any(r => r.Name == "BepInEx")) return BareDllKind.BepInExPlugin;
+                    if (module.AssemblyReferences.Any(r => r.Name == "MelonLoader")) return BareDllKind.Melon;
+                    return BareDllKind.Other;
+                }
+            }
+            catch (BadImageFormatException)
+            {
+                return BareDllKind.Native;
+            }
+            catch
+            {
+                return BareDllKind.Other;
+            }
+        }
+
+        private static bool IsNativeDll(string path)
+        {
+            try
+            {
+                using (ReadModule(path)) return false;
+            }
+            catch (BadImageFormatException)
+            {
+                return true;
             }
             catch
             {
                 return false;
             }
+        }
+
+        // First check if a dll contains the DnW Mod subclass
+        private static bool DefinesModSubclass(Mono.Cecil.ModuleDefinition module)
+        {
+            if (!module.AssemblyReferences.Any(r => r.Name == typeof(Mod).Assembly.GetName().Name)) return false;
+            foreach (var type in module.GetTypes())
+            {
+                if (type.IsAbstract) continue;
+                var baseType = type.BaseType;
+                for (int depth = 0; baseType != null && depth < 32; depth++)
+                {
+                    if (baseType.FullName == typeof(Mod).FullName) return true;
+                    var definition = baseType.GetElementType() as Mono.Cecil.TypeDefinition;
+                    if (definition == null) break;
+                    baseType = definition.BaseType;
+                }
+            }
+            return false;
         }
 
         private static void DiscoverAndLoadMods()
@@ -555,24 +624,28 @@ namespace DnWModLoader
             var containers = new List<ModContainer>();
             foreach (var candidate in candidates)
             {
-                var container = LoadCandidate(candidate);
+                ModContainer container;
+                try
+                {
+                    container = LoadCandidate(candidate);
+                }
+                catch (Exception e)
+                {
+                    Logger.Exception(e, "Loading " + (candidate.AssemblyPath ?? candidate.Directory) + " failed");
+                    container = new ModContainer { Info = FallbackInfo(candidate), Exception = e };
+                    Fail(container, "could not be loaded: " + ModLogger.Brief(e));
+                }
                 if (container != null) containers.Add(container);
             }
 
             // Handles duplicate ids
             foreach (var container in containers)
             {
-                string id = container.Info?.Id;
-                if (string.IsNullOrEmpty(id)) { ModList.Add(container); continue; }
-                if (ModsById.TryGetValue(id, out var first))
-                {
-                    container.Status = ModStatus.Failed;
-                    container.Error = "Duplicate mod id; already provided by " + first.Info.AssemblyPath;
-                    Logger.Error("Mod id " + id + " is used twice: " + first.Info.AssemblyPath + " and " + container.Info.AssemblyPath);
-                    ModList.Add(container);
-                    continue;
-                }
-                ModsById[id] = container;
+                if (ClaimModId(container, out _) || container.Status != ModStatus.Discovered) continue;
+                var owner = ModsById[container.Info.Id];
+                container.Status = ModStatus.Failed;
+                container.Error = "Duplicate mod id; already provided by " + owner.Info.AssemblyPath;
+                Logger.Error("Mod id " + container.Info.Id + " is used twice: " + owner.Info.AssemblyPath + " and " + container.Info.AssemblyPath);
             }
 
             var ordered = OrderForLoading(containers.Where(c => c.Status == ModStatus.Discovered).ToList());
@@ -627,7 +700,7 @@ namespace DnWModLoader
                 string manifestPath = Path.Combine(dir, "mod.json");
                 if (File.Exists(manifestPath))
                 {
-                    var candidate = new Candidate { Directory = dir, ManifestPath = manifestPath };
+                    var candidate = new Candidate { Directory = dir };
                     try
                     {
                         candidate.Manifest = ModManifest.Parse(File.ReadAllText(manifestPath));
@@ -649,37 +722,49 @@ namespace DnWModLoader
                     Logger.Debug("Ignoring folder " + folderName + " (no mod.json and no DLL)");
                     continue;
                 }
-                foreach (var dll in dlls.OrderBy(d => d, StringComparer.OrdinalIgnoreCase))
-                {
-                    if (IsReservedDll(dll)) continue;
-                    if (ReferencesBepInEx(dll)) { ModsFolderBepInExPlugins.Add(dll); continue; }
-                    if (ReferencesMelonLoader(dll)) { ModsFolderMelons.Add(dll); continue; }
-                    result.Add(new Candidate { Directory = dir, AssemblyPath = dll, IsBare = true });
-                }
+                foreach (var dll in dlls.OrderBy(d => d, StringComparer.OrdinalIgnoreCase)) AddBareDll(result, dir, dll);
             }
 
-            foreach (var dll in SafeGetFiles(ModsDirectory, "*.dll").OrderBy(d => d, StringComparer.OrdinalIgnoreCase))
-            {
-                if (IsReservedDll(dll)) continue;
-                if (ReferencesBepInEx(dll)) { ModsFolderBepInExPlugins.Add(dll); continue; }
-                if (ReferencesMelonLoader(dll)) { ModsFolderMelons.Add(dll); continue; }
-                result.Add(new Candidate { Directory = ModsDirectory, AssemblyPath = dll, IsBare = true });
-            }
+            foreach (var dll in SafeGetFiles(ModsDirectory, "*.dll").OrderBy(d => d, StringComparer.OrdinalIgnoreCase)) AddBareDll(result, ModsDirectory, dll);
             return result;
+        }
+
+        private static void AddBareDll(List<Candidate> result, string directory, string dll)
+        {
+            if (IsReservedDll(dll)) return;
+            switch (ClassifyBareDll(dll))
+            {
+                case BareDllKind.Native:
+                    Logger.Debug("Ignoring " + dll + " (not a .NET assembly, assuming it is a native library)");
+                    break;
+                case BareDllKind.BepInExPlugin:
+                    Logger.Debug(dll + " seems to be a BepInEx plugin");
+                    ModsFolderBepInExPlugins.Add(dll);
+                    break;
+                case BareDllKind.Melon:
+                    Logger.Debug(dll + " seems to be a MelonLoader mod");
+                    ModsFolderMelons.Add(dll);
+                    break;
+                default:
+                    result.Add(new Candidate { Directory = directory, AssemblyPath = dll, IsBare = true });
+                    break;
+            }
+        }
+
+        private static string ReservedName(string path)
+        {
+            string file = Path.GetFileName(path);
+            foreach (var reserved in ReservedDllNames)
+                if (string.Equals(file, reserved, StringComparison.OrdinalIgnoreCase)) return reserved;
+            return null;
         }
 
         private static bool IsReservedDll(string path)
         {
-            string file = Path.GetFileName(path);
-            foreach (var reserved in ReservedDllNames)
-            {
-                if (string.Equals(file, reserved, StringComparison.OrdinalIgnoreCase))
-                {
-                    Logger.Warning("Ignoring " + path + ": " + reserved + " must not be placed in the Mods folder (it is part of the loader).");
-                    return true;
-                }
-            }
-            return false;
+            string reserved = ReservedName(path);
+            if (reserved == null) return false;
+            Logger.Warning("Ignoring " + path + ": " + reserved + " is a dll reserved by the mod loader");
+            return true;
         }
 
         private static string[] SafeGetFiles(string dir, string pattern)
@@ -691,21 +776,15 @@ namespace DnWModLoader
         private static string PickAssembly(string dir, string folderName, out string error)
         {
             error = null;
-            var dlls = SafeGetFiles(dir, "*.dll").Where(d => !IsReservedDllQuiet(d)).ToArray();
-            if (dlls.Length == 0) { error = "the mod folder contains no DLL"; return null; }
+            var files = SafeGetFiles(dir, "*.dll").Where(d => ReservedName(d) == null).ToArray();
+            if (files.Length == 0) { error = "the mod folder contains no DLL"; return null; }
+            var dlls = files.Where(d => !IsNativeDll(d)).ToArray();
+            if (dlls.Length == 0) { error = "the mod folder contains no compatible DLL"; return null; }
             if (dlls.Length == 1) return dlls[0];
             foreach (var dll in dlls)
                 if (string.Equals(Path.GetFileNameWithoutExtension(dll), folderName, StringComparison.OrdinalIgnoreCase)) return dll;
             error = "the mod folder contains several DLLs; set \"assembly\" in mod.json";
             return null;
-        }
-
-        private static bool IsReservedDllQuiet(string path)
-        {
-            string file = Path.GetFileName(path);
-            foreach (var reserved in ReservedDllNames)
-                if (string.Equals(file, reserved, StringComparison.OrdinalIgnoreCase)) return true;
-            return false;
         }
 
         private static ModContainer LoadCandidate(Candidate candidate)
@@ -755,6 +834,13 @@ namespace DnWModLoader
                 container.Exception = e;
                 return Fail(container, "could not load assembly: " + e.GetType().Name + ": " + e.Message);
             }
+
+            string loadedFrom = LoadedFrom(assembly);
+            if (!SamePath(loadedFrom, candidate.AssemblyPath))
+            {
+                container.Info = new ModInfo(candidate.Manifest ?? new ModManifest { Id = assembly.GetName().Name.ToLowerInvariant() }, candidate.Directory, candidate.AssemblyPath);
+                return Fail(container, "assembly name " + assembly.GetName().Name + " is already used by " + (string.IsNullOrEmpty(loadedFrom) ? "an assembly loaded from memory" : loadedFrom));
+            }
             container.Assembly = assembly;
 
             Type entryType;
@@ -774,7 +860,7 @@ namespace DnWModLoader
             {
                 if (candidate.IsBare && entryError == null)
                 {
-                    Logger.Debug("Ignoring " + candidate.AssemblyPath + " (no Mod subclass; treated as a library)");
+                    Logger.Debug("Ignoring " + candidate.AssemblyPath + " (no Mod subclass, treated as a library)");
                     return null;
                 }
                 container.Info = new ModInfo(candidate.Manifest ?? new ModManifest { Id = assembly.GetName().Name.ToLowerInvariant() }, candidate.Directory, candidate.AssemblyPath);
@@ -782,8 +868,18 @@ namespace DnWModLoader
             }
             container.EntryType = entryType;
 
-            var attribute = entryType.GetCustomAttribute<ModInfoAttribute>();
-            var effective = candidate.Manifest ?? new ModManifest { Version = null };
+            ModInfoAttribute attribute;
+            try
+            {
+                attribute = entryType.GetCustomAttribute<ModInfoAttribute>();
+            }
+            catch (Exception e)
+            {
+                container.Info = new ModInfo(candidate.Manifest ?? new ModManifest { Id = assembly.GetName().Name.ToLowerInvariant() }, candidate.Directory, candidate.AssemblyPath);
+                container.Exception = e;
+                return Fail(container, "could not read the attributes of " + entryType.FullName + ": " + ModLogger.Brief(e));
+            }
+            var effective = candidate.Manifest ?? new ModManifest();
             if (string.IsNullOrEmpty(effective.Id)) effective.Id = attribute?.Id;
             if (string.IsNullOrEmpty(effective.Id)) effective.Id = SanitizeId(assembly.GetName().Name);
             if (string.IsNullOrEmpty(effective.Name)) effective.Name = attribute?.Name ?? entryType.Name;
@@ -812,6 +908,27 @@ namespace DnWModLoader
             container.Status = ModStatus.Failed;
             container.Error = error;
             return container;
+        }
+
+        private static ModInfo FallbackInfo(Candidate candidate)
+        {
+            var manifest = candidate.Manifest != null && !string.IsNullOrEmpty(candidate.Manifest.Id)
+                ? candidate.Manifest
+                : new ModManifest { Id = SanitizeId(Path.GetFileNameWithoutExtension(candidate.AssemblyPath ?? candidate.Directory)) };
+            return new ModInfo(manifest, candidate.Directory, candidate.AssemblyPath);
+        }
+
+        private static string LoadedFrom(Assembly assembly)
+        {
+            try { return assembly.Location; }
+            catch { return null; }
+        }
+
+        private static bool SamePath(string a, string b)
+        {
+            if (string.IsNullOrEmpty(a) || string.IsNullOrEmpty(b)) return false;
+            try { return string.Equals(Path.GetFullPath(a), Path.GetFullPath(b), StringComparison.OrdinalIgnoreCase); }
+            catch { return false; }
         }
 
         private static string SanitizeId(string raw)
@@ -968,7 +1085,7 @@ namespace DnWModLoader
             {
                 container.Status = ModStatus.Failed;
                 container.Exception = e;
-                container.Error = e.GetType().Name + ": " + e.Message;
+                container.Error = ModLogger.Brief(e);
                 Logger.Exception(e, "Mod " + info.Id + " failed to initialize");
                 if (instance != null)
                 {

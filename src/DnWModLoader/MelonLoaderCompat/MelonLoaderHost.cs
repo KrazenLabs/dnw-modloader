@@ -169,7 +169,7 @@ namespace DnWModLoader.MelonLoaderCompat
             }
             catch (Exception e)
             {
-                Log(LoaderLogLevel.Error, info.Name + " could not be constructed: " + Describe(e));
+                Log(LoaderLogLevel.Error, info.Name + " could not be constructed: " + ModLogger.Brief(e));
                 return;
             }
 
@@ -356,13 +356,6 @@ namespace DnWModLoader.MelonLoaderCompat
         {
             try { action(); }
             catch (Exception e) { adapter.Container.RecordFailure(callback, e); }
-        }
-
-        private static string Describe(Exception e)
-        {
-            var invocation = e as TargetInvocationException;
-            if (invocation != null && invocation.InnerException != null) e = invocation.InnerException;
-            return e.GetType().Name + ": " + e.Message;
         }
     }
 

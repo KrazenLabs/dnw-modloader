@@ -177,6 +177,15 @@ namespace DnWModLoader.Logging
 
         public void Write(LogLevel level, string message) { Log.Write(level, Source, message); }
 
+        // Just one line
+        internal static string Brief(Exception exception)
+        {
+            if (exception == null) return "(null exception)";
+            var invocation = exception as System.Reflection.TargetInvocationException;
+            if (invocation != null && invocation.InnerException != null) exception = invocation.InnerException;
+            return exception.GetType().Name + ": " + exception.Message;
+        }
+
         internal static string Describe(Exception exception)
         {
             if (exception == null) return "(null exception)";
