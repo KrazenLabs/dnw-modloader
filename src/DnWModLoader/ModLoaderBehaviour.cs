@@ -84,6 +84,7 @@ namespace DnWModLoader
             if (_overlayFailures == 3)
             {
                 ModLoader.Logger.Error("Overlay disabled after repeated errors.");
+                Overlay?.ReleaseGame();
                 Overlay = null;
             }
         }

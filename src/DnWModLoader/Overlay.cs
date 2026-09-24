@@ -11,6 +11,7 @@ namespace DnWModLoader
         private const int WindowId = 0x5D4E57;
         private const int UpdateNoticeId = WindowId + 1;
         private const int SettingsTab = 0, ModsTab = 1, LogTab = 2;
+        private const float WindowWidth = 900f, WindowHeight = 640f;
         private static readonly string[] Tabs = { "Settings", "Mods", "Log" };
         private static readonly string[] LogFilters = { "All", "Info+", "Warnings+", "Errors" };
 
@@ -20,17 +21,19 @@ namespace DnWModLoader
         private readonly SettingsPanel _settings;
         private readonly OverlayHotkey _hotkey;
         private readonly GameCursor _cursor = new GameCursor();
+        private readonly GameInputBlock _input = new GameInputBlock();
         private readonly float _bannerUntil;
         private readonly bool _showDirect3D12Warning;
         private readonly bool _showParallelLoaderWarning;
         private readonly bool _showWriteProtectionWarning;
 
         private bool _visible;
+        private bool _openOnStart;
         private int _tab = SettingsTab;
         private int _logFilter = 1;
         private Vector2 _modsScroll;
         private Vector2 _logScroll;
-        private Rect _windowRect = new Rect(40, 40, 900, 640);
+        private Rect _windowRect = new Rect(40, 40, WindowWidth, WindowHeight);
         private NoticeState _updateNotice;
 
         private bool _stylesReady;
@@ -42,7 +45,7 @@ namespace DnWModLoader
             _config = config ?? new LoaderConfig();
             _hotkey = new OverlayHotkey(_config.OverlayHotkey);
             _settings = new SettingsPanel(_config, () => _hotkey.Set(_config.OverlayHotkey));
-            _visible = _config.ShowOverlayOnStart;
+            _openOnStart = _config.ShowOverlayOnStart;
             _bannerUntil = _config.ShowStartupBanner ? Time.realtimeSinceStartup + Mathf.Max(1f, _config.StartupBannerSeconds) : 0f;
             _showDirect3D12Warning = Direct3D12Warning.Applies();
             _showParallelLoaderWarning = ParallelLoaderWarning.Applies();
@@ -59,9 +62,11 @@ namespace DnWModLoader
                 if (_visible)
                 {
                     _cursor.Unlock();
+                    _input.Block();
                 }
                 else
                 {
+                    _input.Restore();
                     _cursor.Restore();
                     _settings.CancelKeyPick();
                     GUI.FocusControl(null);
@@ -84,13 +89,29 @@ namespace DnWModLoader
 
         public void Update()
         {
+            if (_openOnStart)
+            {
+                _openOnStart = false;
+                Visible = true;
+            }
             if (_hotkey.PressedThisFrame() && !HotkeyBlocked) Toggle();
             _cursor.KeepUnlocked();
+            _input.Maintain();
         }
 
         public void LateUpdate()
         {
             _cursor.KeepUnlocked();
+            _input.Maintain();
+        }
+
+        public void ReleaseGame()
+        {
+            _visible = false;
+            try { _input.Restore(); }
+            catch (Exception e) { ModLoader.Logger.Debug("Restoring game input failed: " + e.Message); }
+            try { _cursor.Restore(); }
+            catch (Exception e) { ModLoader.Logger.Debug("Releasing the cursor failed: " + e.Message); }
         }
 
         public void OnGUI()
@@ -123,8 +144,8 @@ namespace DnWModLoader
 
         private void DrawWindow()
         {
-            _windowRect.width = Mathf.Min(_windowRect.width, Screen.width - 20);
-            _windowRect.height = Mathf.Min(_windowRect.height, Screen.height - 20);
+            _windowRect.width = Mathf.Min(WindowWidth, Screen.width - 20);
+            _windowRect.height = Mathf.Min(WindowHeight, Screen.height - 20);
             _windowRect = GUILayout.Window(WindowId, _windowRect, DrawWindowContents, Title, _windowStyle);
             _windowRect.x = Mathf.Clamp(_windowRect.x, 0, Mathf.Max(0, Screen.width - _windowRect.width));
             _windowRect.y = Mathf.Clamp(_windowRect.y, 0, Mathf.Max(0, Screen.height - _windowRect.height));
@@ -219,7 +240,7 @@ namespace DnWModLoader
             GUILayout.BeginVertical(_boxStyle);
             GUILayout.BeginHorizontal();
             string title = (info != null ? info.Name + "  " + info.VersionString : "?") + "   [" + mod.Status + "]";
-            if (mod.Framework != null) title += "   " + mod.Framework + " plugin";
+            if (mod.Framework != null) title += "   " + mod.Framework + (mod.Framework == MelonLoaderCompat.MelonLoaderHost.Framework ? " mod" : " plugin");
             if (info != null && !string.IsNullOrEmpty(info.Author)) title += "   by " + info.Author;
             GUILayout.Label(title, mod.Status == ModStatus.Failed || mod.Status == ModStatus.Skipped ? _errorStyle : _headerStyle);
             GUILayout.FlexibleSpace();
