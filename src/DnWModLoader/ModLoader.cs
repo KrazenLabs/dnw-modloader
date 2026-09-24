@@ -320,15 +320,14 @@ namespace DnWModLoader
 
         private static void HookUnityLog()
         {
-            if (Config.MirrorUnityLog == UnityLogMirror.None) return;
             try { Application.logMessageReceivedThreaded += OnUnityLogMessage; }
             catch (Exception e) { Logger.Debug("Could not hook Unity log: " + e.Message); }
         }
 
         private static void OnUnityLogMessage(string condition, string stackTrace, LogType type)
         {
-            if (Log.IsEchoedLine(condition)) return;
             var mirror = Config.MirrorUnityLog;
+            if (mirror == UnityLogMirror.None || Log.IsEchoedLine(condition)) return;
             switch (type)
             {
                 case LogType.Error:

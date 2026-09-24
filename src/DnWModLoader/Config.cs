@@ -3,7 +3,6 @@ using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
 using System.Linq;
-using System.Text;
 using DnWModLoader.Logging;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Converters;
@@ -83,7 +82,7 @@ namespace DnWModLoader.Config
 
         public abstract bool IsDefault { get; }
 
-        internal abstract bool TrySetFromToken(JToken token, out string error);
+        internal abstract bool TrySetFromToken(JToken token, out string error, out bool changed);
         internal abstract JToken ValueToToken(JsonSerializer serializer);
         internal abstract JToken DefaultToToken(JsonSerializer serializer);
 
@@ -217,9 +216,10 @@ namespace DnWModLoader.Config
             Owner?.NotifyChanged(this);
         }
 
-        internal override bool TrySetFromToken(JToken token, out string error)
+        internal override bool TrySetFromToken(JToken token, out string error, out bool changed)
         {
             error = null;
+            changed = false;
             try
             {
                 T parsed;
@@ -235,9 +235,10 @@ namespace DnWModLoader.Config
                 {
                     parsed = token.ToObject<T>(ModConfig.Serializer);
                 }
-                if (!EqualityComparer<T>.Default.Equals(_value, parsed))
+                if (!SameValue(_value, parsed))
                 {
                     _value = parsed;
+                    changed = true;
                     try { Changed?.Invoke(_value); }
                     catch (Exception e) { Owner?.Logger?.Exception(e, "Config change handler for " + Section + "." + Key + " threw"); }
                 }
@@ -248,6 +249,14 @@ namespace DnWModLoader.Config
                 error = e.Message;
                 return false;
             }
+        }
+
+        private static bool SameValue(T a, T b)
+        {
+            if (EqualityComparer<T>.Default.Equals(a, b)) return true;
+            if (a == null || b == null || typeof(T).IsValueType || typeof(T) == typeof(string)) return false;
+            try { return JToken.DeepEquals(JToken.FromObject(a, ModConfig.Serializer), JToken.FromObject(b, ModConfig.Serializer)); }
+            catch { return false; }
         }
 
         internal override JToken ValueToToken(JsonSerializer serializer) { return _value == null ? JValue.CreateNull() : JToken.FromObject(_value, serializer); }
@@ -262,6 +271,7 @@ namespace DnWModLoader.Config
         private static readonly List<ModConfig> Registry = new List<ModConfig>();
         private static readonly object RegistrySync = new object();
         private static readonly TimeSpan SaveDelay = TimeSpan.FromSeconds(0.5);
+        private static readonly TimeSpan RetryDelay = TimeSpan.FromSeconds(10);
         private static volatile bool _savesPending;
 
         private readonly object _sync = new object();
@@ -271,7 +281,8 @@ namespace DnWModLoader.Config
         private JObject _document = new JObject();
         private bool _suppressSave;
         private bool _dirty;
-        private DateTime _dirtyAt;
+        private DateTime _saveDueAt;
+        private string _lastSaveError;
 
         public string FilePath { get; }
         // ID of your mod
@@ -301,7 +312,7 @@ namespace DnWModLoader.Config
 
         private static JsonSerializerSettings CreateSettings()
         {
-            var settings = new JsonSerializerSettings { Formatting = Formatting.Indented };
+            var settings = new JsonSerializerSettings { Formatting = Formatting.Indented, DateParseHandling = DateParseHandling.None };
             settings.Converters.Add(new StringEnumConverter());
             return settings;
         }
@@ -319,7 +330,7 @@ namespace DnWModLoader.Config
             foreach (var config in configs)
             {
                 if (!config._dirty) continue;
-                if (now - config._dirtyAt >= SaveDelay) config.Save();
+                if (now >= config._saveDueAt) config.Save();
                 else _savesPending = true;
             }
         }
@@ -366,7 +377,7 @@ namespace DnWModLoader.Config
                 var token = GetValueToken(section, key);
                 if (token != null)
                 {
-                    if (entry.TrySetFromToken(token, out string error)) needsWrite = false;
+                    if (entry.TrySetFromToken(token, out string error, out _)) needsWrite = false;
                     else Logger?.Warning("Config " + id + " has an invalid value (" + error + "); using default " + defaultValue);
                 }
 
@@ -450,24 +461,26 @@ namespace DnWModLoader.Config
         {
             lock (_sync)
             {
-                _dirty = false;
                 try
                 {
                     foreach (var entry in _ordered) WriteEntryToDocument(entry);
-                    string dir = Path.GetDirectoryName(FilePath);
-                    if (!string.IsNullOrEmpty(dir)) Directory.CreateDirectory(dir);
-                    string tmp = FilePath + ".tmp";
-                    File.WriteAllText(tmp, _document.ToString(Formatting.Indented), new UTF8Encoding(false));
-                    if (File.Exists(FilePath)) File.Delete(FilePath);
-                    File.Move(tmp, FilePath);
-                }
-                catch (UnauthorizedAccessException e)
-                {
-                    Logger?.Warning("Failed to save config " + FilePath + ": " + e.Message);
+                    SafeFile.WriteAllText(FilePath, _document.ToString(Formatting.Indented));
+                    _dirty = false;
+                    if (_lastSaveError != null)
+                    {
+                        Logger?.Info("Saved config " + FilePath + " after an earlier failure.");
+                        _lastSaveError = null;
+                    }
                 }
                 catch (Exception e)
                 {
-                    Logger?.Exception(e, "Failed to save config " + FilePath);
+                    _dirty = true;
+                    _saveDueAt = DateTime.UtcNow + RetryDelay;
+                    _savesPending = true;
+                    if (e.Message == _lastSaveError) return;
+                    _lastSaveError = e.Message;
+                    if (e is UnauthorizedAccessException) Logger?.Warning("Failed to save config " + FilePath + ": " + e.Message + " Retrying every " + RetryDelay.TotalSeconds + " s.");
+                    else Logger?.Exception(e, "Failed to save config " + FilePath + " (retrying every " + RetryDelay.TotalSeconds + " s)");
                 }
             }
         }
@@ -481,13 +494,16 @@ namespace DnWModLoader.Config
                 _suppressSave = true;
                 try
                 {
+                    var changed = new List<ConfigEntryBase>();
                     foreach (var entry in _ordered)
                     {
                         var token = GetValueToken(entry.Section, entry.Key);
                         if (token == null) continue;
-                        if (!entry.TrySetFromToken(token, out string error))
+                        if (!entry.TrySetFromToken(token, out string error, out bool entryChanged))
                             Logger?.Warning("Config " + entry.Section + "/" + entry.Key + " has an invalid value (" + error + "); keeping " + entry.BoxedValue);
+                        else if (entryChanged) changed.Add(entry);
                     }
+                    foreach (var entry in changed) NotifyChanged(entry);
                 }
                 finally { _suppressSave = false; }
             }
@@ -503,7 +519,7 @@ namespace DnWModLoader.Config
         private void MarkDirty()
         {
             _dirty = true;
-            _dirtyAt = DateTime.UtcNow;
+            _saveDueAt = DateTime.UtcNow + SaveDelay;
             _savesPending = true;
         }
 
@@ -513,7 +529,7 @@ namespace DnWModLoader.Config
             {
                 if (File.Exists(FilePath))
                 {
-                    var parsed = JsonConvert.DeserializeObject<JObject>(File.ReadAllText(FilePath));
+                    var parsed = JsonConvert.DeserializeObject<JObject>(File.ReadAllText(FilePath), SerializerSettings);
                     _document = parsed ?? new JObject();
                     return;
                 }

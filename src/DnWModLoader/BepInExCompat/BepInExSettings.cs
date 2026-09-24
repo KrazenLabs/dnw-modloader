@@ -150,8 +150,9 @@ namespace DnWModLoader.BepInExCompat
             catch { return value.ToString(); }
         }
 
-        internal override bool TrySetFromToken(JToken token, out string error)
+        internal override bool TrySetFromToken(JToken token, out string error, out bool changed)
         {
+            changed = false;
             error = "BepInEx settings are stored in their .cfg file";
             return false;
         }

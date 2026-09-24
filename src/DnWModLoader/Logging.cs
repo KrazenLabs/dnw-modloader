@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.IO;
 using System.Text;
 
@@ -24,7 +25,7 @@ namespace DnWModLoader.Logging
 
         public override string ToString()
         {
-            return "[" + Time.ToString("HH:mm:ss.fff") + "] [" + LevelTag(Level) + "] [" + Source + "] " + Message;
+            return "[" + Time.ToString("HH:mm:ss.fff", CultureInfo.InvariantCulture) + "] [" + LevelTag(Level) + "] [" + Source + "] " + Message;
         }
 
         internal static string LevelTag(LogLevel level)

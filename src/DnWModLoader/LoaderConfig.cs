@@ -1,10 +1,10 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
-using System.Text;
 using DnWModLoader.Logging;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Converters;
+using Newtonsoft.Json.Linq;
 
 namespace DnWModLoader
 {
@@ -70,36 +70,62 @@ namespace DnWModLoader
 
         public static LoaderConfig Load(string path, ModLogger logger)
         {
-            LoaderConfig config = null;
-            if (File.Exists(path))
+            if (!File.Exists(path))
             {
-                try
-                {
-                    config = JsonConvert.DeserializeObject<LoaderConfig>(File.ReadAllText(path));
-                }
-                catch (Exception e)
-                {
-                    logger?.Warning("Could not parse " + path + " (" + e.Message + "); using defaults.");
-                }
+                var created = new LoaderConfig { FilePath = path };
+                created.Save(logger);
+                return created;
             }
-            if (config == null)
+
+            LoaderConfig config;
+            try
             {
+                config = ParseDocument(File.ReadAllText(path)).ToObject<LoaderConfig>(TolerantSerializer(path, logger));
+            }
+            catch (Exception e)
+            {
+                string backup = path + ".broken";
+                bool copied;
+                try { File.Copy(path, backup, true); copied = true; }
+                catch { copied = false; }
+                logger?.Warning("Could not read " + path + " (" + e.Message + "). Using default settings for this session"
+                                + (copied ? "; old config file was copied to " + Path.GetFileName(backup) : "") + ".");
                 config = new LoaderConfig();
-                config.FilePath = path;
-                config.Save(logger);
             }
             config.FilePath = path;
             if (config.DisabledMods == null) config.DisabledMods = new List<string>();
             return config;
         }
 
+        private static JObject ParseDocument(string text)
+        {
+            if (string.IsNullOrWhiteSpace(text)) throw new JsonException("the file is empty");
+            using (var reader = new JsonTextReader(new StringReader(text)) { DateParseHandling = DateParseHandling.None })
+            {
+                var document = JToken.ReadFrom(reader) as JObject;
+                if (document == null) throw new JsonException("the file does not contain a JSON object");
+                while (reader.Read())
+                    if (reader.TokenType != JsonToken.Comment) throw new JsonException("unexpected text after the JSON object");
+                return document;
+            }
+
+        private static JsonSerializer TolerantSerializer(string path, ModLogger logger)
+        {
+            var settings = new JsonSerializerSettings { DateParseHandling = DateParseHandling.None };
+            settings.Error = (sender, args) =>
+            {
+                if (args.CurrentObject == args.ErrorContext.OriginalObject)
+                    logger?.Warning("Ignoring the invalid value of \"" + args.ErrorContext.Member + "\" in " + path + " (" + args.ErrorContext.Error.Message + "); using its default.");
+                args.ErrorContext.Handled = true;
+            };
+            return JsonSerializer.Create(settings);
+        }
+
         public void Save(ModLogger logger = null)
         {
             try
             {
-                string dir = Path.GetDirectoryName(FilePath);
-                if (!string.IsNullOrEmpty(dir)) Directory.CreateDirectory(dir);
-                File.WriteAllText(FilePath, JsonConvert.SerializeObject(this, Formatting.Indented), new UTF8Encoding(false));
+                SafeFile.WriteAllText(FilePath, JsonConvert.SerializeObject(this, Formatting.Indented));
             }
             catch (UnauthorizedAccessException e)
             {

@@ -1,4 +1,5 @@
 using System;
+using System.Globalization;
 using System.IO;
 
 namespace DnWModLoader
@@ -33,7 +34,7 @@ namespace DnWModLoader
             try { ModLoader.Logger.Fatal("Bootstrap.Init failed: " + e); } catch { }
             try { UnityEngine.Debug.LogError(text); } catch { }
 
-            string line = "[" + DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss") + "] " + text + Environment.NewLine;
+            string line = "[" + DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss", CultureInfo.InvariantCulture) + "] " + text + Environment.NewLine;
             if (!AppendCrashLog(() => Path.Combine(ModLoader.GuessGameDirectory(), ModLoader.ModsFolderName), line))
                 AppendCrashLog(ModLoader.FallbackDirectory, line);
         }

@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.IO;
 using System.Reflection;
 using System.Text;
@@ -155,7 +156,7 @@ namespace DnWModLoader
             try
             {
                 string path = Path.Combine(LoaderDirectory ?? ".", "preloader-error.log");
-                File.WriteAllText(path, "[" + DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss") + "] DnW Mod Loader preloader failed.\r\n" + e + "\r\n", Encoding.UTF8);
+                File.WriteAllText(path, "[" + DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss", CultureInfo.InvariantCulture) + "] DnW Mod Loader preloader failed.\r\n" + e + "\r\n", Encoding.UTF8);
             }
             catch { }
         }
