@@ -108,6 +108,7 @@ namespace DnWModLoader
                     if (reader.TokenType != JsonToken.Comment) throw new JsonException("unexpected text after the JSON object");
                 return document;
             }
+        }
 
         private static JsonSerializer TolerantSerializer(string path, ModLogger logger)
         {
