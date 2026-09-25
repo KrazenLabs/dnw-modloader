@@ -71,7 +71,7 @@ namespace DnWModLoader.MelonLoaderCompat
             if (ModLoader.Phase >= LoaderPhase.Running) LateStart();
         }
 
-        private const string MelonApiVersion = "0.7.3";
+        private static string MelonApiVersion { get { return typeof(MelonMod).Assembly.GetName().Version.ToString(3); } }
 
         private static void SetUpEnvironment()
         {

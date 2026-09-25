@@ -11,7 +11,8 @@ namespace DnWModLoader
         private const string LatestReleaseApi = "https://api.github.com/repos/KrazenLabs/dnw-modloader/releases/latest";
         private const int TimeoutSeconds = 15;
 
-        private static bool _started;
+        private static bool _checking;
+        private static bool _checked;
 
         public static string Status { get; private set; } = "not checked";
 
@@ -22,8 +23,8 @@ namespace DnWModLoader
 
         public static void Begin()
         {
-            if (_started) return;
-            _started = true;
+            if (_checking || _checked) return;
+            _checking = true;
             Status = "checking...";
             try
             {
@@ -65,6 +66,8 @@ namespace DnWModLoader
                         Fail("unreadable release tag \"" + tag + "\"");
                         return;
                     }
+                    _checking = false;
+                    _checked = true;
                     if (VersionUtil.Compare(latest, ModLoader.ParsedVersion) <= 0)
                     {
                         Status = "up to date";
@@ -88,6 +91,7 @@ namespace DnWModLoader
 
         private static void Fail(string reason)
         {
+            _checking = false;
             Status = "check failed: " + reason;
             ModLoader.Logger.Debug("Update check failed: " + reason);
         }

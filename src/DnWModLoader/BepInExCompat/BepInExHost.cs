@@ -20,13 +20,6 @@ namespace DnWModLoader.BepInExCompat
         private static readonly List<Plugin> Plugins = new List<Plugin>();
         private static readonly Dictionary<string, ScannedAssembly> AssembliesByName = new Dictionary<string, ScannedAssembly>(StringComparer.OrdinalIgnoreCase);
 
-        private static readonly HashSet<string> SharedAssemblies = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
-        {
-            "DnWModLoader", "BepInEx", "MelonLoader", "0Harmony", "Tomlet",
-            "MonoMod.RuntimeDetour", "MonoMod.Core", "MonoMod.Utils",
-            "MonoMod.Backports", "MonoMod.ILHelpers", "MonoMod.Iced",
-            "Mono.Cecil", "Mono.Cecil.Mdb", "Mono.Cecil.Pdb", "Mono.Cecil.Rocks",
-        };
         private static bool _discovered;
         private static bool _started;
 
@@ -75,7 +68,7 @@ namespace DnWModLoader.BepInExCompat
                         continue;
                     }
                     if (scanned == null) continue;
-                    if (!AssembliesByName.ContainsKey(scanned.Name) && !SharedAssemblies.Contains(scanned.Name)) AssembliesByName[scanned.Name] = scanned;
+                    if (!AssembliesByName.ContainsKey(scanned.Name) && !ModLoader.IsBundledAssembly(scanned.Name)) AssembliesByName[scanned.Name] = scanned;
                     WarnAboutOtherBepInExVersions(scanned);
                     scannedPlugins.AddRange(scanned.Plugins);
                 }

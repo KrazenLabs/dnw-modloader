@@ -97,7 +97,18 @@ foreach ($mod in $mods) {
 Copy-Item (Join-Path $root "tools\dropin\Mods-README.txt") (Join-Path $stage "Mods\README.txt")
 
 $zip = Join-Path $release "DnWModLoader-$version.zip"
-Compress-Archive -Path (Join-Path $stage "*") -DestinationPath $zip -Force
+<# Linux-friendly zipping #>
+Add-Type -AssemblyName System.IO.Compression, System.IO.Compression.FileSystem
+$archive = [System.IO.Compression.ZipFile]::Open($zip, [System.IO.Compression.ZipArchiveMode]::Create)
+try {
+    foreach ($file in Get-ChildItem -Path $stage -Recurse -File | Sort-Object FullName) {
+        $entry = $file.FullName.Substring($stage.Length + 1).Replace('\', '/')
+        [System.IO.Compression.ZipFileExtensions]::CreateEntryFromFile($archive, $file.FullName, $entry, [System.IO.Compression.CompressionLevel]::Optimal) | Out-Null
+    }
+}
+finally {
+    $archive.Dispose()
+}
 Remove-Item $stage -Recurse -Force
 
 Write-Host ""

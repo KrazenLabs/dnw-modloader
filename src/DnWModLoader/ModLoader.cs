@@ -23,9 +23,21 @@ namespace DnWModLoader
 
     public static class ModLoader
     {
-        public const string Version = "1.7.0";
+        public static readonly string Version = ReadVersion();
 
-        public static readonly Version ParsedVersion = new Version(1, 7, 0);
+        public static readonly Version ParsedVersion = VersionUtil.ParseOrDefault(Version);
+
+        private static string ReadVersion()
+        {
+            try
+            {
+                var attribute = (AssemblyFileVersionAttribute)Attribute.GetCustomAttribute(typeof(ModLoader).Assembly, typeof(AssemblyFileVersionAttribute));
+                if (attribute != null && System.Version.TryParse(attribute.Version, out var file))
+                    return file.ToString(file.Revision > 0 ? 4 : file.Build >= 0 ? 3 : 2);
+            }
+            catch { }
+            return "0.0.0";
+        }
 
         public const string ModsFolderName = "Mods";
         public const string ConfigFolderName = "config";
@@ -436,13 +448,30 @@ namespace DnWModLoader
             public string DiscoveryError;
         }
 
-        private static readonly string[] ReservedDllNames =
+        private static HashSet<string> _bundledAssemblies;
+        private static string _bundledFrom;
+
+        internal static bool IsBundledAssembly(string assemblyName)
         {
-            "DnWModLoader.dll", "BepInEx.dll", "MelonLoader.dll", "0Harmony.dll", "Tomlet.dll",
-            "MonoMod.RuntimeDetour.dll", "MonoMod.Core.dll", "MonoMod.Utils.dll",
-            "MonoMod.Backports.dll", "MonoMod.ILHelpers.dll", "MonoMod.Iced.dll",
-            "Mono.Cecil.dll", "Mono.Cecil.Mdb.dll", "Mono.Cecil.Pdb.dll", "Mono.Cecil.Rocks.dll",
-        };
+            return !string.IsNullOrEmpty(assemblyName) && BundledAssemblies().Contains(assemblyName);
+        }
+
+        private static HashSet<string> BundledAssemblies()
+        {
+            string directory = LoaderDirectory;
+            var bundled = _bundledAssemblies;
+            if (bundled != null && string.Equals(_bundledFrom, directory, StringComparison.OrdinalIgnoreCase)) return bundled;
+
+            bundled = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { typeof(ModLoader).Assembly.GetName().Name };
+            if (!string.IsNullOrEmpty(directory))
+            {
+                foreach (var file in SafeGetFiles(directory, "*.dll"))
+                    if (string.Equals(Path.GetExtension(file), ".dll", StringComparison.OrdinalIgnoreCase)) bundled.Add(Path.GetFileNameWithoutExtension(file));
+            }
+            _bundledFrom = directory;
+            _bundledAssemblies = bundled;
+            return bundled;
+        }
 
         // BepInEx plugins within Mods folder
         private static readonly List<string> ModsFolderBepInExPlugins = new List<string>();
@@ -762,10 +791,7 @@ namespace DnWModLoader
 
         private static string ReservedName(string path)
         {
-            string file = Path.GetFileName(path);
-            foreach (var reserved in ReservedDllNames)
-                if (string.Equals(file, reserved, StringComparison.OrdinalIgnoreCase)) return reserved;
-            return null;
+            return IsBundledAssembly(Path.GetFileNameWithoutExtension(path)) ? Path.GetFileName(path) : null;
         }
 
         private static bool IsReservedDll(string path)

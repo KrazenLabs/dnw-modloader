@@ -8,6 +8,17 @@
     <SteamPath Condition="'$(GameDir)' == ''">$([MSBuild]::GetRegistryValueFromView('HKEY_CURRENT_USER\Software\Valve\Steam', 'SteamPath', '', RegistryView.Registry64, RegistryView.Registry32))</SteamPath>
     <SteamGameDir Condition="'$(SteamPath)' != ''">$(SteamPath)/steamapps/common/Drag'n Wash/</SteamGameDir>
     <GameDir Condition="'$(GameDir)' == '' And '$(SteamGameDir)' != '' And Exists('$(SteamGameDir)DragNWash.exe')">$(SteamGameDir)</GameDir>
+    <SteamLibraryFile Condition="'$(GameDir)' == '' And '$(SteamPath)' != ''">$(SteamPath)/steamapps/libraryfolders.vdf</SteamLibraryFile>
+    <SteamLibraries Condition="'$(SteamLibraryFile)' != '' And Exists('$(SteamLibraryFile)')">$([System.Text.RegularExpressions.Regex]::Unescape($([System.Text.RegularExpressions.Regex]::Replace($([System.IO.File]::ReadAllText('$(SteamLibraryFile)')), '[\s\S]*?"path"\s+"([^"]*)"|[\s\S]+$', '$1|'))))</SteamLibraries>
+    <SteamLibraryGameDirs>$(SteamLibraries.Replace('|', '\steamapps\common\Drag%27n Wash\|'))||||||||</SteamLibraryGameDirs>
+    <GameDir Condition="'$(GameDir)' == '' And Exists('$(SteamLibraryGameDirs.Split(|).GetValue(0))DragNWash.exe')">$(SteamLibraryGameDirs.Split(|).GetValue(0))</GameDir>
+    <GameDir Condition="'$(GameDir)' == '' And Exists('$(SteamLibraryGameDirs.Split(|).GetValue(1))DragNWash.exe')">$(SteamLibraryGameDirs.Split(|).GetValue(1))</GameDir>
+    <GameDir Condition="'$(GameDir)' == '' And Exists('$(SteamLibraryGameDirs.Split(|).GetValue(2))DragNWash.exe')">$(SteamLibraryGameDirs.Split(|).GetValue(2))</GameDir>
+    <GameDir Condition="'$(GameDir)' == '' And Exists('$(SteamLibraryGameDirs.Split(|).GetValue(3))DragNWash.exe')">$(SteamLibraryGameDirs.Split(|).GetValue(3))</GameDir>
+    <GameDir Condition="'$(GameDir)' == '' And Exists('$(SteamLibraryGameDirs.Split(|).GetValue(4))DragNWash.exe')">$(SteamLibraryGameDirs.Split(|).GetValue(4))</GameDir>
+    <GameDir Condition="'$(GameDir)' == '' And Exists('$(SteamLibraryGameDirs.Split(|).GetValue(5))DragNWash.exe')">$(SteamLibraryGameDirs.Split(|).GetValue(5))</GameDir>
+    <GameDir Condition="'$(GameDir)' == '' And Exists('$(SteamLibraryGameDirs.Split(|).GetValue(6))DragNWash.exe')">$(SteamLibraryGameDirs.Split(|).GetValue(6))</GameDir>
+    <GameDir Condition="'$(GameDir)' == '' And Exists('$(SteamLibraryGameDirs.Split(|).GetValue(7))DragNWash.exe')">$(SteamLibraryGameDirs.Split(|).GetValue(7))</GameDir>
     <GameDir Condition="'$(GameDir)' == ''">C:\Program Files (x86)\Steam\steamapps\common\Drag'n Wash\</GameDir>
     <GameDir Condition="!HasTrailingSlash('$(GameDir)')">$(GameDir)\</GameDir>
     <GameManagedDir>$(GameDir)DragNWash_Data\Managed\</GameManagedDir>

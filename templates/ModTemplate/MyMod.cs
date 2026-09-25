@@ -20,7 +20,7 @@ namespace MyMod
             _enabled = Config.Bind("General", "Enabled", true, "Master switch for this mod.");
             _strength = Config.Bind("General", "Strength", 1f, "How strong the effect is.", ConfigMeta.Range(0, 2, 0.1));
             _strength.Changed += value => Logger.Info("Strength is now " + value);
-            Logger.Info("MyMod initialized (loader " + ModLoader.Version + ")");
+            Logger.Info("MyMod initialized (loader " + ModLoader.ParsedVersion + ")");
             // [HarmonyPatch] classes are applied automatically after this method returns
             // Set `public override bool AutoPatch => false;` and call Harmony.PatchAll() yourself for manual control
         }

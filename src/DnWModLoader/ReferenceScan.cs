@@ -8,11 +8,6 @@ namespace DnWModLoader
     // Checks if a mod's references are supported
     internal static class ReferenceScan
     {
-        internal static readonly HashSet<string> BundledScopes = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
-        {
-            "BepInEx", "MelonLoader", "0Harmony", "MonoMod.Utils", "MonoMod.RuntimeDetour", "MonoMod.Core", "Tomlet",
-        };
-
         private const string NotPublic = " (not public in this loader)";
 
         public static void Collect(ModuleDefinition module, IList<string> directories, ICollection<string> missing)
@@ -62,7 +57,7 @@ namespace DnWModLoader
 
         private static bool IsBundled(IMetadataScope scope)
         {
-            return scope != null && scope.MetadataScopeType == MetadataScopeType.AssemblyNameReference && BundledScopes.Contains(scope.Name);
+            return scope != null && scope.MetadataScopeType == MetadataScopeType.AssemblyNameReference && ModLoader.IsBundledAssembly(scope.Name);
         }
 
         private static bool WithinUnusable(TypeReference type, Dictionary<string, string> unusable)
