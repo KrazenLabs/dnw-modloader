@@ -8,7 +8,7 @@ namespace DnWModLoader
 {
     public static class VersionUtil
     {
-        private static readonly Regex Numeric = new Regex(@"^\d+", RegexOptions.Compiled);
+        private static readonly Regex Numeric = new Regex(@"^\d+");
         private static readonly char[] Separators = { '-', '+', ' ' };
 
         // Parses version strings
@@ -187,7 +187,7 @@ namespace DnWModLoader
         // Optional
         [JsonProperty("url")] public string Url { get; set; }
 
-        private static readonly Regex IdPattern = new Regex(@"^[a-z0-9][a-z0-9._\-]{0,127}$", RegexOptions.Compiled);
+        private static readonly Regex IdPattern = new Regex(@"^[a-z0-9][a-z0-9._\-]{0,127}$");
 
         public static bool IsValidId(string id) { return !string.IsNullOrEmpty(id) && IdPattern.IsMatch(id); }
 

@@ -159,7 +159,7 @@ namespace DnWModLoader.BepInExCompat
             }
             catch (Exception e) { ModLoader.Logger.Warning("Could not open BepInEx/LogOutput.log: " + e.Message); }
 
-            AppDomain.CurrentDomain.AssemblyResolve += ResolvePluginAssembly;
+            AssemblyResolver.AddFallback(ResolvePluginAssembly);
         }
 
         private static void WarnAboutBepInExItself()
@@ -338,11 +338,8 @@ namespace DnWModLoader.BepInExCompat
             return scanned.Loaded = Assembly.LoadFrom(scanned.Path);
         }
 
-        private static Assembly ResolvePluginAssembly(object sender, ResolveEventArgs args)
+        private static Assembly ResolvePluginAssembly(string name, string requested)
         {
-            string name;
-            try { name = new AssemblyName(args.Name).Name; }
-            catch { return null; }
             if (!AssembliesByName.TryGetValue(name, out var scanned)) return null;
             try
             {
@@ -350,7 +347,7 @@ namespace DnWModLoader.BepInExCompat
             }
             catch (Exception e)
             {
-                ModLoader.Logger.Warning("Failed to load " + scanned.Path + " while resolving " + args.Name + ": " + e.Message);
+                ModLoader.Logger.Warning("Failed to load " + scanned.Path + " while resolving " + requested + ": " + e.Message);
                 return null;
             }
         }

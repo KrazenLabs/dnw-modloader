@@ -49,6 +49,7 @@ namespace DnWModLoader.MelonLoaderCompat
                 try { LoadFile(file); }
                 catch (Exception e) { Log(LoaderLogLevel.Error, "Could not load " + Path.GetFileName(file) + ": " + ModLogger.Brief(e)); }
             }
+            ReferenceScan.Release();
 
             var ordered = Adapters.OrderBy(a => a.Priority).ToList();
             Adapters.Clear();
@@ -94,7 +95,7 @@ namespace DnWModLoader.MelonLoaderCompat
             MelonCoroutines.Stopper = StopCoroutine;
 
             var userLibs = MelonUtils.UserLibsDirectoryValue;
-            if (Directory.Exists(userLibs)) ModLoader.AddResolveDirectory(userLibs);
+            AssemblyResolver.AddDirectory(userLibs);
         }
 
         private static void WriteMelonLog(string section, string text, MelonLogger.Level level)

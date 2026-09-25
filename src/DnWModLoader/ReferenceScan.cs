@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using Mono.Cecil;
 
 namespace DnWModLoader
@@ -9,6 +10,9 @@ namespace DnWModLoader
     internal static class ReferenceScan
     {
         private const string NotPublic = " (not public in this loader)";
+
+        private static readonly List<string> SearchDirectories = new List<string>();
+        private static DefaultAssemblyResolver _resolver;
 
         public static void Collect(ModuleDefinition module, IList<string> directories, ICollection<string> missing)
         {
@@ -87,11 +91,7 @@ namespace DnWModLoader
 
         public static bool IsAvailable(string assemblyName, IList<string> directories)
         {
-            foreach (var loaded in AppDomain.CurrentDomain.GetAssemblies())
-            {
-                try { if (string.Equals(loaded.GetName().Name, assemblyName, StringComparison.OrdinalIgnoreCase)) return true; }
-                catch { }
-            }
+            if (AssemblyResolver.IsLoaded(assemblyName)) return true;
             if (directories != null)
             {
                 foreach (var dir in directories)
@@ -104,15 +104,9 @@ namespace DnWModLoader
         public static List<string> Scan(string path, IList<string> directories)
         {
             var missing = new List<string>();
-            var resolver = new DefaultAssemblyResolver();
             try
             {
-                foreach (var dir in resolver.GetSearchDirectories()) resolver.RemoveSearchDirectory(dir);
-                if (directories != null)
-                    foreach (var dir in directories)
-                        if (!string.IsNullOrEmpty(dir) && Directory.Exists(dir)) resolver.AddSearchDirectory(dir);
-
-                var parameters = new ReaderParameters { AssemblyResolver = resolver, InMemory = true, ReadingMode = ReadingMode.Deferred };
+                var parameters = new ReaderParameters { AssemblyResolver = SharedResolver(directories), InMemory = true, ReadingMode = ReadingMode.Deferred };
                 using (var definition = AssemblyDefinition.ReadAssembly(path, parameters))
                     Collect(definition.MainModule, directories, missing);
             }
@@ -120,11 +114,33 @@ namespace DnWModLoader
             {
                 ModLoader.Logger.Debug("Could not pre-scan " + Path.GetFileName(path) + ": " + e.Message);
             }
-            finally
-            {
-                resolver.Dispose();
-            }
             return missing;
+        }
+
+        public static void Release()
+        {
+            if (_resolver != null) _resolver.Dispose();
+            _resolver = null;
+            SearchDirectories.Clear();
+        }
+
+        private static DefaultAssemblyResolver SharedResolver(IList<string> directories)
+        {
+            if (_resolver == null)
+            {
+                _resolver = new DefaultAssemblyResolver();
+                foreach (var dir in _resolver.GetSearchDirectories()) _resolver.RemoveSearchDirectory(dir);
+            }
+            if (directories != null)
+            {
+                foreach (var dir in directories)
+                {
+                    if (string.IsNullOrEmpty(dir) || !Directory.Exists(dir) || SearchDirectories.Contains(dir, StringComparer.OrdinalIgnoreCase)) continue;
+                    SearchDirectories.Add(dir);
+                    _resolver.AddSearchDirectory(dir);
+                }
+            }
+            return _resolver;
         }
     }
 }

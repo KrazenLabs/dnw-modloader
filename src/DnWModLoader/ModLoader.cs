@@ -46,7 +46,6 @@ namespace DnWModLoader
 
         private static readonly List<ModContainer> ModList = new List<ModContainer>();
         private static readonly Dictionary<string, ModContainer> ModsById = new Dictionary<string, ModContainer>(StringComparer.OrdinalIgnoreCase);
-        private static readonly List<string> ResolveDirectories = new List<string>();
         private static readonly List<string> SetupProblems = new List<string>();
         private static ModContainer[] _loadedCache = new ModContainer[0];
         private static bool _loadedCacheDirty;
@@ -136,6 +135,7 @@ namespace DnWModLoader
             CreateDirectory(ConfigDirectory);
             string fallbackDirectory = FallbackDirectory();
             Log.Open(Path.Combine(ModsDirectory, LogFileName), fallbackDirectory != null ? Path.Combine(fallbackDirectory, LogFileName) : null);
+            AssemblyResolver.Logger = Logger;
             if (Log.FilePath != null && !Log.IsFallback) RemoveFallbackLogs(fallbackDirectory);
 
             Config = LoaderConfig.Load(Path.Combine(ModsDirectory, LoaderConfig.FileName), Logger);
@@ -144,8 +144,10 @@ namespace DnWModLoader
 
             LogHeader();
             HookUnityLog();
-            AppDomain.CurrentDomain.AssemblyResolve += OnAssemblyResolve;
+            AssemblyResolver.Install(LoaderDirectory);
             AppDomain.CurrentDomain.UnhandledException += OnUnhandledException;
+            try { HarmonyLog.Forward(); }
+            catch (Exception e) { Logger.Debug("Could not forward HarmonyX's log: " + e.Message); }
             EnsureBehaviour("SubsystemRegistration");
 
             try
@@ -374,55 +376,6 @@ namespace DnWModLoader
         {
             try { Logger.Error("Unhandled exception (terminating=" + e.IsTerminating + "): " + ModLogger.Describe(e.ExceptionObject as Exception)); }
             catch { }
-        }
-
-        private static Assembly OnAssemblyResolve(object sender, ResolveEventArgs args)
-        {
-            string name;
-            try { name = new AssemblyName(args.Name).Name; }
-            catch { return null; }
-            if (string.IsNullOrEmpty(name) || name.EndsWith(".resources", StringComparison.OrdinalIgnoreCase)) return null;
-
-            if (!string.IsNullOrEmpty(LoaderDirectory))
-            {
-                string ours = Path.Combine(LoaderDirectory, name + ".dll");
-                if (File.Exists(ours))
-                {
-                    try { return Assembly.LoadFrom(ours); }
-                    catch (Exception e) { Logger.Warning("Failed to load " + ours + " while resolving " + args.Name + ": " + e.Message); }
-                }
-            }
-
-            foreach (var loaded in AppDomain.CurrentDomain.GetAssemblies())
-            {
-                try { if (string.Equals(loaded.GetName().Name, name, StringComparison.OrdinalIgnoreCase)) return loaded; }
-                catch { }
-            }
-
-            foreach (var dir in ResolveDirectories)
-            {
-                string candidate = Path.Combine(dir, name + ".dll");
-                if (!File.Exists(candidate)) continue;
-                try
-                {
-                    var assembly = Assembly.LoadFrom(candidate);
-                    Logger.Debug("Resolved " + name + " from " + candidate);
-                    return assembly;
-                }
-                catch (Exception e)
-                {
-                    Logger.Warning("Failed to load " + candidate + " while resolving " + args.Name + ": " + e.Message);
-                }
-            }
-            return null;
-        }
-
-        internal static void AddResolveDirectory(string dir)
-        {
-            if (string.IsNullOrEmpty(dir) || !Directory.Exists(dir)) return;
-            foreach (var existing in ResolveDirectories)
-                if (string.Equals(existing, dir, StringComparison.OrdinalIgnoreCase)) return;
-            ResolveDirectories.Add(dir);
         }
 
         // Used for emergency logging
@@ -659,13 +612,12 @@ namespace DnWModLoader
             var candidates = Discover();
             Logger.Info("Discovered " + candidates.Count + " mod candidate(s) in " + ModsDirectory);
 
-            AddResolveDirectory(LoaderDirectory);
-            AddResolveDirectory(ModsDirectory);
+            AssemblyResolver.AddDirectory(ModsDirectory);
             foreach (var candidate in candidates)
             {
-                AddResolveDirectory(candidate.Directory);
-                AddResolveDirectory(Path.Combine(candidate.Directory, "lib"));
-                AddResolveDirectory(Path.Combine(candidate.Directory, "libs"));
+                AssemblyResolver.AddDirectory(candidate.Directory);
+                AssemblyResolver.AddDirectory(Path.Combine(candidate.Directory, "lib"));
+                AssemblyResolver.AddDirectory(Path.Combine(candidate.Directory, "libs"));
             }
 
             var containers = new List<ModContainer>();

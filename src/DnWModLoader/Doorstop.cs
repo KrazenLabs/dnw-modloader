@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Globalization;
 using System.IO;
 using System.Reflection;
@@ -61,50 +62,26 @@ namespace DnWModLoader
                 if (string.IsNullOrEmpty(ManagedDirectory) || !Directory.Exists(ManagedDirectory)) ManagedDirectory = FindManagedDirectory(GameDirectory);
 
                 Note("Doorstop entry: loader=" + dllPath + " game=" + GameDirectory + " managed=" + ManagedDirectory);
-                AppDomain.CurrentDomain.AssemblyResolve += ResolveFromLoaderDirectory;
+                AssemblyResolver.Install(LoaderDirectory);
 
                 if (ManagedDirectory == null) throw new DirectoryNotFoundException("Managed folder not found under " + GameDirectory);
                 string gameAssembly = Path.Combine(ManagedDirectory, "Assembly-CSharp.dll");
                 if (!File.Exists(gameAssembly)) throw new FileNotFoundException("game assembly not found", gameAssembly);
 
+                var watch = Stopwatch.StartNew();
                 byte[] patched = AssemblyPatcher.Patch(File.ReadAllBytes(gameAssembly), ManagedDirectory, dllPath, out string target, out string lateTarget, out string latePhase);
                 Assembly.Load(patched);
                 Active = true;
                 AfterRegistrationHooked = lateTarget != null;
                 AfterRegistrationPhase = latePhase;
                 Status = "in-memory patch of Assembly-CSharp.dll, hooked " + target + (lateTarget != null ? " and " + lateTarget : "");
-                Note("Preloaded patched Assembly-CSharp.dll (" + patched.Length + " bytes), hooked " + target + (lateTarget != null ? " and " + lateTarget + " (" + latePhase + ")" : "") + ".");
+                Note("Preloaded patched Assembly-CSharp.dll (" + patched.Length + " bytes) in " + watch.ElapsedMilliseconds + " ms, hooked " + target + (lateTarget != null ? " and " + lateTarget + " (" + latePhase + ")" : "") + ".");
             }
             catch (Exception e)
             {
                 Status = "failed: " + e.GetType().Name + ": " + e.Message;
                 Note("Preloader failed: " + e);
                 WriteFailureLog(e);
-            }
-        }
-
-        private static Assembly ResolveFromLoaderDirectory(object sender, ResolveEventArgs args)
-        {
-            try
-            {
-                string name = new AssemblyName(args.Name).Name;
-                if (string.IsNullOrEmpty(name) || name.EndsWith(".resources", StringComparison.OrdinalIgnoreCase)) return null;
-
-                if (LoaderDirectory != null)
-                {
-                    string ours = Path.Combine(LoaderDirectory, name + ".dll");
-                    if (File.Exists(ours)) return Assembly.LoadFrom(ours);
-                }
-                foreach (var loaded in AppDomain.CurrentDomain.GetAssemblies())
-                {
-                    try { if (string.Equals(loaded.GetName().Name, name, StringComparison.OrdinalIgnoreCase)) return loaded; }
-                    catch { }
-                }
-                return null;
-            }
-            catch
-            {
-                return null;
             }
         }
 
@@ -146,7 +123,7 @@ namespace DnWModLoader
             return null;
         }
 
-        private static void Note(string message)
+        internal static void Note(string message)
         {
             lock (Sync) EarlyLog.Add(message);
         }
