@@ -15,7 +15,7 @@ namespace DnWModLoader
         private const string LateMethodName = "AfterRegistration";
         private const int SubsystemRegistration = 4;
 
-        // Phases after SubsystemRegistration, in the order Unity runs them
+        // SubsystemRegistration phases
         private static readonly int[] LatePhases = { 2, 3, 1 };
         private static readonly string[] LatePhaseNames = { "AfterAssembliesLoaded", "BeforeSplashScreen", "BeforeSceneLoad" };
 
@@ -38,7 +38,7 @@ namespace DnWModLoader
                 InsertCall(module, target, init);
                 targetDescription = target.DeclaringType.FullName + "." + target.Name;
 
-                // Optional second hook, for BepInEx plugins
+                // Optional second hook, for BIE and ML
                 lateTargetDescription = null;
                 latePhase = null;
                 var late = bootstrap.Methods.FirstOrDefault(m => m.Name == LateMethodName && m.IsStatic && m.IsPublic && !m.HasParameters);
@@ -84,7 +84,7 @@ namespace DnWModLoader
                    ?? candidates.OrderBy(m => m.DeclaringType.FullName, StringComparer.Ordinal).ThenBy(m => m.Name, StringComparer.Ordinal).FirstOrDefault();
         }
 
-        // The earliest method that runs after all SubsystemRegistration methods
+        // The earliest method after all SubsystemRegistration methods
         private static bool FindLateTarget(ModuleDefinition module, out MethodDefinition target, out string phase)
         {
             var methods = InitializeOnLoadMethods(module).ToList();

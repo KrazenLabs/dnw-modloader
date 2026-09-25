@@ -14,24 +14,24 @@ namespace DnWModLoader
             if (_initCalled) return;
             _initCalled = true;
             try { ModLoader.Initialize(); }
-            catch (Exception e) { EmergencyLog(e); }
+            catch (Exception e) { EmergencyLog("Bootstrap.Init", e); }
         }
 
         private static bool _afterRegistrationCalled;
 
-        // BepInEx plugins
+        // BepInEx plugins and MelonLoader mods
         public static void AfterRegistration()
         {
             if (_afterRegistrationCalled || !_initCalled) return;
             _afterRegistrationCalled = true;
             try { ModLoader.AfterRegistration(); }
-            catch (Exception e) { EmergencyLog(e); }
+            catch (Exception e) { EmergencyLog("Bootstrap.AfterRegistration", e); }
         }
 
-        private static void EmergencyLog(Exception e)
+        private static void EmergencyLog(string step, Exception e)
         {
-            string text = "[DnW] Bootstrap.Init failed: " + e;
-            try { ModLoader.Logger.Fatal("Bootstrap.Init failed: " + e); } catch { }
+            string text = "[DnW] " + step + " failed: " + e;
+            try { ModLoader.Logger.Fatal(step + " failed: " + e); } catch { }
             try { UnityEngine.Debug.LogError(text); } catch { }
 
             string line = "[" + DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss", CultureInfo.InvariantCulture) + "] " + text + Environment.NewLine;

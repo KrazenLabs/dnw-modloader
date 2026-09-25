@@ -11,7 +11,7 @@
   <ItemGroup>
     <!-- HarmonyX bundled with loader (Harmony 2 API on MonoMod.RuntimeDetour) -->
     <PackageReference Include="HarmonyX" Version="2.16.1" />
-    <!-- Mono.Cecil is used by Doorstop to load BepInEx plugins -->
+    <!-- Mono.Cecil is used by the preloader to patch game assembly and inspect mods before loading -->
     <PackageReference Include="Mono.Cecil" Version="0.11.6" />
   </ItemGroup>
 

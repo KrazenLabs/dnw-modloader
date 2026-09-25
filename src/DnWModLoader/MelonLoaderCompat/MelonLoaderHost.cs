@@ -54,7 +54,7 @@ namespace DnWModLoader.MelonLoaderCompat
             var ordered = Adapters.OrderBy(a => a.Priority).ToList();
             Adapters.Clear();
             Adapters.AddRange(ordered);
-            foreach (var adapter in Adapters) ModLoader.AddExternalMod(adapter.Container);
+            ModLoader.MoveToEnd(Adapters.Select(a => a.Container));
 
             foreach (var adapter in Adapters) Register(adapter);
             Raise(MelonEvents.OnPreSupportModule);
@@ -64,7 +64,7 @@ namespace DnWModLoader.MelonLoaderCompat
             // Global MelonEvents
             HostHooks.Add(new Hooks());
 
-            foreach (var adapter in Adapters) Summarize(adapter.Container);
+            foreach (var adapter in Adapters) ModLoader.LogSummary(adapter.Container);
 
             Raise(MelonEvents.OnApplicationStart);
 
@@ -161,7 +161,7 @@ namespace DnWModLoader.MelonLoaderCompat
 
             if (info.SystemType == null)
             {
-                Log(LoaderLogLevel.Warning, info.Name + " names no melon type in MelonInfo assembly.");
+                Log(LoaderLogLevel.Warning, info.Name + " no melon type in MelonInfo assembly.");
                 return;
             }
 
@@ -188,20 +188,7 @@ namespace DnWModLoader.MelonLoaderCompat
             var container = CreateContainer(info, path);
             var adapter = new MelonModAdapter { Container = container, Assembly = assembly, Priority = ReadPriority(assembly) };
 
-            if (ModLoader.Config != null && ModLoader.Config.IsDisabled(container.Info.Id))
-            {
-                container.Status = ModStatus.Disabled;
-                container.Error = "disabled in " + LoaderConfig.FileName;
-            }
-
-            string owner;
-            if (!ModLoader.ClaimModId(container, out owner) && container.Status == ModStatus.Discovered)
-            {
-                container.Status = ModStatus.Failed;
-                container.Error = "Duplicate mod id; already provided by " + owner;
-                Log(LoaderLogLevel.Error, info.Name + ": id " + container.Info.Id + " is already used by " + owner + ".");
-            }
-
+            ModLoader.Register(container);
             Adapters.Add(adapter);
             if (container.Status != ModStatus.Discovered) return;
 
@@ -216,9 +203,7 @@ namespace DnWModLoader.MelonLoaderCompat
             catch (Exception e)
             {
                 melonAssembly.AddRotten(new RottenMelon(info.SystemType, "Failed to create an instance of the Melon.", e));
-                container.Status = ModStatus.Failed;
-                container.Exception = e;
-                container.Error = "could not be constructed: " + ModLogger.Brief(e);
+                container.MarkFailed("could not be constructed: " + ModLogger.Brief(e), e);
                 Log(LoaderLogLevel.Error, info.Name + " could not be constructed: " + ModLogger.Brief(e));
                 return;
             }
@@ -334,9 +319,7 @@ namespace DnWModLoader.MelonLoaderCompat
         private static void Fail(MelonModAdapter adapter, Exception e)
         {
             var container = adapter.Container;
-            container.Status = ModStatus.Failed;
-            container.Exception = e;
-            container.Error = e.GetType().Name + ": " + e.Message;
+            container.MarkFailed(e.GetType().Name + ": " + e.Message, e);
             ModLoader.Logger.Exception(e, "MelonLoader mod " + container.Info.Id + " failed to initialize");
             try { adapter.Melon.MelonAssembly.UnregisterMelons(null, true, false, true); }
             catch (Exception unregisterError) { ModLoader.Logger.Debug("Unregistering " + container.Info.Id + " failed: " + unregisterError.Message); }
@@ -362,8 +345,7 @@ namespace DnWModLoader.MelonLoaderCompat
             if (adapter == null) return;
             var container = adapter.Container;
             if (container.Status != ModStatus.Loaded && container.Status != ModStatus.Discovered) return;
-            container.Status = ModStatus.Skipped;
-            container.Error = "Unregistered" + (string.IsNullOrEmpty(reason) ? "" : ": " + reason);
+            container.MarkSkipped("Unregistered" + (string.IsNullOrEmpty(reason) ? "" : ": " + reason));
             container.PatchedMethodCount = 0;
         }
 
@@ -458,21 +440,6 @@ namespace DnWModLoader.MelonLoaderCompat
         }
 
         // -- dispatch ------------------------------------------------------------------------
-
-        private static void Summarize(ModContainer container)
-        {
-            string line = container.Info + " [" + Framework + "]";
-            switch (container.Status)
-            {
-                case ModStatus.Loaded:
-                    ModLoader.Logger.Info("  [OK]       " + line + " (" + container.PatchedMethodCount + " patched method(s), "
-                                          + container.InitializeMilliseconds.ToString("0") + " ms)" + (container.Error != null ? ": " + container.Error : ""));
-                    break;
-                case ModStatus.Disabled: ModLoader.Logger.Info("  [DISABLED] " + line); break;
-                case ModStatus.Skipped: ModLoader.Logger.Warning("  [SKIPPED]  " + line + ": " + container.Error); break;
-                case ModStatus.Failed: ModLoader.Logger.Error("  [FAILED]   " + line + ": " + container.Error); break;
-            }
-        }
 
         private static void Raise(MelonEvent melonEvent)
         {

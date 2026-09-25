@@ -124,7 +124,6 @@ namespace DnWModLoader
     {
         Discovered,
         Disabled,
-        // A dependency is missing or incompatible
         Skipped,
         Loaded,
         Failed,
@@ -180,13 +179,32 @@ namespace DnWModLoader
         public Exception Exception { get; internal set; }
         public int PatchedMethodCount { get; internal set; }
         public double InitializeMilliseconds { get; internal set; }
-        // null for DnW mods, "BepInEx" for BepInEx plugins
+        // null for DnW mods, "BepInEx" for BepInEx plugins, "MelonLoader" for MelonLoader mods
         public string Framework { get; internal set; }
         internal ISettingsSource Settings { get; set; }
 
         internal bool CallbacksEnabled { get { return Status == ModStatus.Loaded && Instance != null; } }
 
         public override string ToString() { return (Info != null ? Info.ToString() : "?") + " [" + Status + "]"; }
+
+        internal void MarkFailed(string reason, Exception exception = null)
+        {
+            Status = ModStatus.Failed;
+            Error = reason;
+            if (exception != null) Exception = exception;
+        }
+
+        internal void MarkSkipped(string reason)
+        {
+            Status = ModStatus.Skipped;
+            Error = reason;
+        }
+
+        internal void MarkDisabled(string reason)
+        {
+            Status = ModStatus.Disabled;
+            Error = reason;
+        }
 
         internal bool IsCallbackDisabled(string callback)
         {

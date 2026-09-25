@@ -193,12 +193,11 @@ namespace DnWModLoader.BepInExCompat
                     continue;
                 }
                 var plugin = new Plugin { Scanned = scanned, Container = CreateContainer(scanned) };
-                ModLoader.AddExternalMod(plugin.Container);
                 if (scanned.Invalid != null) Fail(plugin, "not a valid plugin: " + scanned.Invalid, null);
                 candidates.Add(plugin);
             }
 
-            var selected = new Dictionary<string, Plugin>(StringComparer.OrdinalIgnoreCase);
+            var newest = new List<Plugin>();
             foreach (var group in candidates.Where(p => p.Container.Status == ModStatus.Discovered).GroupBy(p => p.Guid, StringComparer.OrdinalIgnoreCase))
             {
                 Plugin chosen = null;
@@ -217,20 +216,13 @@ namespace DnWModLoader.BepInExCompat
                     }
                     chosen = plugin;
                 }
-                if (chosen == null) continue;
-                if (!ModLoader.ClaimModId(chosen.Container, out string owner))
-                {
-                    Fail(chosen, "its GUID is already used by " + owner, null);
-                    continue;
-                }
-                if (ModLoader.Config.IsDisabled(chosen.Guid))
-                {
-                    chosen.Container.Status = ModStatus.Disabled;
-                    chosen.Container.Error = "disabled in " + LoaderConfig.FileName;
-                    continue;
-                }
-                selected[chosen.Guid] = chosen;
+                if (chosen != null) newest.Add(chosen);
             }
+
+            foreach (var plugin in candidates) ModLoader.Register(plugin.Container);
+            var selected = new Dictionary<string, Plugin>(StringComparer.OrdinalIgnoreCase);
+            foreach (var plugin in newest)
+                if (plugin.Container.Status == ModStatus.Discovered) selected[plugin.Guid] = plugin;
 
             foreach (var plugin in selected.Values.OrderBy(p => p.Guid, StringComparer.OrdinalIgnoreCase).ToList())
             {
@@ -434,25 +426,12 @@ namespace DnWModLoader.BepInExCompat
 
         private static void LogSummary()
         {
-            foreach (var plugin in Plugins)
-            {
-                var c = plugin.Container;
-                string line = c.Info + " [BepInEx]";
-                switch (c.Status)
-                {
-                    case ModStatus.Loaded: ModLoader.Logger.Info("  [OK]       " + line + " (" + c.PatchedMethodCount + " patched method(s), " + c.InitializeMilliseconds.ToString("0") + " ms)" + (c.Error != null ? ": " + c.Error : "")); break;
-                    case ModStatus.Disabled: ModLoader.Logger.Info("  [DISABLED] " + line); break;
-                    case ModStatus.Skipped: ModLoader.Logger.Warning("  [SKIPPED]  " + line + ": " + c.Error); break;
-                    case ModStatus.Failed: ModLoader.Logger.Error("  [FAILED]   " + line + ": " + c.Error); break;
-                    default: ModLoader.Logger.Warning("  [?]        " + line); break;
-                }
-            }
+            foreach (var plugin in Plugins) ModLoader.LogSummary(plugin.Container);
         }
 
         private static void Skip(Plugin plugin, string reason)
         {
-            plugin.Container.Status = ModStatus.Skipped;
-            plugin.Container.Error = reason;
+            plugin.Container.MarkSkipped(reason);
             string message = "Skipping [" + DisplayName(plugin) + "] because " + reason;
             Chainloader.DependencyErrors.Add(message);
             Log(BepInLogging.LogLevel.Warning, message);
@@ -460,9 +439,7 @@ namespace DnWModLoader.BepInExCompat
 
         private static void Fail(Plugin plugin, string reason, Exception exception, bool dependencyError = false)
         {
-            plugin.Container.Status = ModStatus.Failed;
-            plugin.Container.Error = reason;
-            plugin.Container.Exception = exception;
+            plugin.Container.MarkFailed(reason, exception);
             string message = "Could not load [" + DisplayName(plugin) + "] because " + reason;
             if (dependencyError) Chainloader.DependencyErrors.Add(message);
             Log(BepInLogging.LogLevel.Error, message);
