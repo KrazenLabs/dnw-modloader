@@ -67,9 +67,7 @@ namespace DnWModLoader
                 {
                     GameInputBlock.Restore();
                     _cursor.Restore();
-                    _settings.CommitEdits();
-                    _settings.CancelKeyPick();
-                    GUI.FocusControl(null);
+                    _settings.Leave();
                     if (_updateNotice == NoticeState.Showing) _updateNotice = NoticeState.Done;
                 }
             }
@@ -118,11 +116,13 @@ namespace DnWModLoader
         {
             EnsureStyles();
             GUI.depth = -1000;
-            if (_hotkey.IsKeyDown(Event.current) && !HotkeyBlocked)
+            var e = Event.current;
+            if (_hotkey.IsKeyDown(e) && !HotkeyBlocked)
             {
                 Toggle();
-                Event.current.Use();
+                e.Use();
             }
+            if (_visible && e.rawType == EventType.MouseDown) _settings.CancelKeyPickUnlessOver(e.mousePosition);
 
             if (_visible)
             {
@@ -134,7 +134,7 @@ namespace DnWModLoader
 
         private bool HotkeyBlocked
         {
-            get { return _visible && (_settings.TextFieldFocused || _settings.PickingKey); }
+            get { return _visible && _tab == SettingsTab && (_settings.TextFieldFocused || _settings.PickingKey); }
         }
 
         private string Title
@@ -156,7 +156,12 @@ namespace DnWModLoader
             GUILayout.BeginHorizontal();
             ModLoader.CountStatuses(out int loaded, out int failed, out int skipped, out int disabled);
             Tabs[ModsTab] = "Mods (" + ModLoader.Mods.Count + ")";
-            _tab = GUILayout.Toolbar(_tab, Tabs, GUILayout.Width(300));
+            int tab = GUILayout.Toolbar(_tab, Tabs, GUILayout.Width(300));
+            if (tab != _tab)
+            {
+                if (_tab == SettingsTab) _settings.Leave();
+                _tab = tab;
+            }
             GUILayout.FlexibleSpace();
             if (GUILayout.Button("Close [" + _hotkey.Label + "]", GUILayout.Width(110))) Visible = false;
             GUILayout.EndHorizontal();

@@ -23,14 +23,13 @@ namespace DnWModLoader
         public void Set(string name)
         {
             string text = string.IsNullOrEmpty(name) ? "F10" : name.Trim();
-            if (!Enum.TryParse(text, true, out _key) || _key == Key.None)
+            if (!KeyNames.TryParse(text, out _key))
             {
                 ModLoader.Logger.Warning("Unknown overlay hotkey \"" + text + "\" in " + LoaderConfig.FileName + "; falling back to F10.");
-                text = "F10";
                 _key = Key.F10;
             }
-            if (!Enum.TryParse(text, true, out _legacyKey)) _legacyKey = KeyCode.F10;
-            Name = text;
+            if (!KeyNames.TryToKeyCode(_key, out _legacyKey)) _legacyKey = KeyCode.F10;
+            Name = _key.ToString();
         }
 
         public bool PressedThisFrame()

@@ -1,6 +1,8 @@
 using System;
 using System.Collections.Generic;
 using System.Globalization;
+using System.Reflection;
+using System.Text;
 using DnWModLoader.Config;
 using DnWModLoader.Logging;
 using UnityEngine;
@@ -20,6 +22,7 @@ namespace DnWModLoader
         private const float ValueFieldWidth = 80f;
         private const float KeyWidth = 170f;
         private const float ResetWidth = 52f;
+        private const float ClearWidth = 22f;
         private const float ErrorSeconds = 6f;
 
         private readonly LoaderConfig _loaderConfig;
@@ -48,9 +51,17 @@ namespace DnWModLoader
 
         public bool PickingKey { get { return _picker.Listening; } }
 
-        public void CancelKeyPick()
+        public void CancelKeyPickUnlessOver(Vector2 screenPosition)
         {
+            _picker.CancelUnlessOver(screenPosition);
+        }
+
+        public void Leave()
+        {
+            CommitEdits();
             _picker.Cancel();
+            TextFieldFocused = false;
+            GUI.FocusControl(null);
         }
 
         public void CommitEdits()
@@ -77,6 +88,7 @@ namespace DnWModLoader
         public void Draw()
         {
             EnsureStyles();
+            _picker.CancelIfHidden();
             _focusedName = GUI.GetNameOfFocusedControl() ?? "";
             TextFieldFocused = _focusedName.StartsWith(ControlPrefix, StringComparison.Ordinal);
 
@@ -247,9 +259,9 @@ namespace DnWModLoader
         {
             var type = ValueType(entry);
             if (type == typeof(bool)) return Widget.Toggle;
-            if (IsKeyBinding(entry, type)) return Widget.Key;
+            if (IsKeyBinding(entry, type) && PickerFits(entry, type)) return Widget.Key;
             // Flag combinations are typed as text, e.g. "Warning, Error"
-            if ((type.IsEnum && !type.IsDefined(typeof(FlagsAttribute), false)) || (entry.Meta.AcceptableValues != null && entry.Meta.AcceptableValues.Length > 0)) return Widget.Choice;
+            if ((type.IsEnum && !type.IsDefined(typeof(FlagsAttribute), false) && type != typeof(KeyCode)) || HasChoices(entry)) return Widget.Choice;
             if (ConfigEntryBase.IsNumericType(type) && entry.Meta.HasRange) return Widget.Slider;
             return Widget.Text;
         }
@@ -261,41 +273,170 @@ namespace DnWModLoader
 
         private static bool IsKeyBinding(ConfigEntryBase entry, Type type)
         {
-            if (type == typeof(Key) || type == typeof(KeyCode) || type.FullName == KeyboardShortcutTypeName) return true;
+            if (type == typeof(Key) || type == typeof(KeyCode) || IsShortcut(type)) return true;
             return entry.Meta.KeyBinding && (type == typeof(string) || type.IsEnum);
+        }
+
+        private static bool IsShortcut(Type type)
+        {
+            return type.FullName == KeyboardShortcutTypeName;
+        }
+
+        private static bool HasChoices(ConfigEntryBase entry)
+        {
+            return entry.Meta.AcceptableValues != null && entry.Meta.AcceptableValues.Length > 0;
+        }
+
+        private static bool PickerFits(ConfigEntryBase entry, Type type)
+        {
+            if (type == typeof(Key)) return true;
+            if (HasChoices(entry))
+            {
+                if (IsShortcut(type)) return false;
+                foreach (var value in entry.Meta.AcceptableValues)
+                    if (!Pickable(value)) return false;
+            }
+            else if (type.IsEnum && type != typeof(KeyCode))
+            {
+                foreach (var value in Enum.GetValues(type))
+                    if (!Pickable(value)) return false;
+            }
+            return Pickable(entry.BoxedValue) && Pickable(entry.BoxedDefault);
+        }
+
+        private static bool Pickable(object value)
+        {
+            foreach (var name in KeyParts(value))
+                if (!KeyNames.TryParse(name, out _)) return false;
+            return true;
+        }
+
+        private static bool IsNone(object value)
+        {
+            return KeyParts(value).Count == 0;
+        }
+
+        private static List<string> KeyParts(object value)
+        {
+            var parts = new List<string>();
+            if (value == null) return parts;
+            if (value is Key key)
+            {
+                if (key != Key.None) parts.Add(key.ToString());
+            }
+            else if (value is KeyCode code)
+            {
+                if (code != KeyCode.None) parts.Add(code.ToString());
+            }
+            else if (IsShortcut(value.GetType()))
+            {
+                foreach (var part in ShortcutKeys(value)) parts.Add(part.ToString());
+            }
+            else
+            {
+                string text = value.ToString().Trim();
+                if (text.Length > 0 && !string.Equals(text, "None", StringComparison.OrdinalIgnoreCase)) parts.Add(text);
+            }
+            return parts;
+        }
+
+        private static List<KeyCode> ShortcutKeys(object shortcut)
+        {
+            var keys = new List<KeyCode>();
+            var type = shortcut.GetType();
+            var main = (KeyCode)type.GetProperty("MainKey").GetValue(shortcut, null);
+            if (main == KeyCode.None) return keys;
+            keys.Add(main);
+            if (type.GetProperty("Modifiers").GetValue(shortcut, null) is IEnumerable<KeyCode> modifiers) keys.AddRange(modifiers);
+            return keys;
+        }
+
+        private static object ClearedValue(ConfigEntryBase entry, Type type)
+        {
+            if (HasChoices(entry))
+            {
+                foreach (var value in entry.Meta.AcceptableValues)
+                    if (IsNone(value)) return value;
+                return null;
+            }
+            if (type == typeof(Key)) return Key.None;
+            if (type == typeof(KeyCode)) return KeyCode.None;
+            if (IsShortcut(type))
+            {
+                var empty = type.GetField("Empty", BindingFlags.Public | BindingFlags.Static);
+                return empty != null ? empty.GetValue(null) : null;
+            }
+            if (type.IsEnum)
+            {
+                foreach (var name in Enum.GetNames(type))
+                    if (string.Equals(name, "None", StringComparison.OrdinalIgnoreCase)) return Enum.Parse(type, name);
+                return null;
+            }
+            return IsNone(entry.BoxedDefault) ? entry.BoxedDefault : null;
         }
 
         private void DrawKey(ConfigEntryBase entry, string controlId)
         {
-            if (DrawKeyPicker(controlId, KeyLabel(entry), out Key key)) AssignKey(entry, key, controlId);
+            var type = ValueType(entry);
+            bool combinations = IsShortcut(type);
+            bool picked = _picker.Draw(controlId, KeyLabel(entry), KeyWidth, combinations, out Key key, out Key[] modifiers);
+            object cleared = ClearedValue(entry, type);
+            if (cleared != null)
+            {
+                GUI.enabled = !IsNone(entry.BoxedValue);
+                if (GUILayout.Button("x", GUILayout.Width(ClearWidth)))
+                {
+                    entry.BoxedValue = cleared;
+                    _errors.Remove(controlId);
+                }
+                GUI.enabled = true;
+            }
+            DrawPickerHint(controlId, combinations);
+            if (picked) AssignKey(entry, type, key, modifiers, controlId);
         }
 
-        private bool DrawKeyPicker(string id, string label, out Key key)
+        private void DrawPickerHint(string id, bool combinations)
         {
-            bool picked = _picker.Draw(id, label, KeyWidth, out key);
-            GUILayout.Label(_picker.IsListening(id) ? "Esc cancels" : "", _small, GUILayout.ExpandWidth(true));
-            return picked;
+            string hint = !_picker.IsListening(id) ? "" : combinations ? "Hold Ctrl, Shift or Alt for key combinations; Esc cancels" : "Esc cancels";
+            GUILayout.Label(hint, _small, GUILayout.ExpandWidth(true));
         }
 
         private static string KeyLabel(ConfigEntryBase entry)
         {
             object value = entry.BoxedValue;
-            if (value is Key key) return KeyNames.Label(key);
+            if (value is Key key) return key == Key.None ? "None" : KeyNames.Label(key);
             if (value is KeyCode code) return KeyNames.Label(code);
+            if (value != null && IsShortcut(value.GetType()))
+            {
+                var keys = ShortcutKeys(value);
+                if (keys.Count == 0) return "None";
+                var parts = new List<string>();
+                for (int i = 1; i < keys.Count; i++) parts.Add(KeyNames.Label(keys[i]));
+                parts.Add(KeyNames.Label(keys[0]));
+                return string.Join(" + ", parts.ToArray());
+            }
             return KeyNames.Label(entry.ValueToDisplayString());
         }
 
-        private void AssignKey(ConfigEntryBase entry, Key key, string controlId)
+        private void AssignKey(ConfigEntryBase entry, Type type, Key key, Key[] modifiers, string controlId)
         {
-            var type = ValueType(entry);
             bool assigned;
             if (type == typeof(Key)) assigned = TryAssign(entry, key);
             else if (type == typeof(KeyCode)) assigned = KeyNames.TryToKeyCode(key, out var code) && TryAssign(entry, code);
-            else if (type.FullName == KeyboardShortcutTypeName) assigned = KeyNames.TryToKeyCode(key, out var mainKey) && entry.TrySetFromString(mainKey.ToString(), out _);
+            else if (IsShortcut(type)) assigned = TryAssignShortcut(entry, key, modifiers);
             else assigned = Acceptable(entry, key.ToString()) && entry.TrySetFromString(key.ToString(), out _);
 
             if (assigned) _errors.Remove(controlId);
             else _errors[controlId] = new KeyValuePair<string, float>(KeyNames.Label(key) + " cannot be used for this setting.", Time.realtimeSinceStartup);
+        }
+
+        private static bool TryAssignShortcut(ConfigEntryBase entry, Key key, Key[] modifiers)
+        {
+            if (!KeyNames.TryToKeyCode(key, out var main)) return false;
+            var text = new StringBuilder(main.ToString());
+            foreach (var modifier in modifiers)
+                if (KeyNames.TryToKeyCode(modifier, out var code) && code != main) text.Append(" + ").Append(code.ToString());
+            return entry.TrySetFromString(text.ToString(), out _);
         }
 
         private static bool TryAssign(ConfigEntryBase entry, object value)
@@ -317,7 +458,7 @@ namespace DnWModLoader
         private static Array Choices(ConfigEntryBase entry)
         {
             var type = ValueType(entry);
-            if (entry.Meta.AcceptableValues != null && entry.Meta.AcceptableValues.Length > 0) return entry.Meta.AcceptableValues;
+            if (HasChoices(entry)) return entry.Meta.AcceptableValues;
             return Enum.GetValues(type);
         }
 
@@ -434,11 +575,12 @@ namespace DnWModLoader
 
             GUILayout.BeginHorizontal();
             GUILayout.Label("Overlay hotkey", GUILayout.Width(LabelWidth));
-            if (DrawKeyPicker(HotkeyPickerId, KeyNames.Label(c.OverlayHotkey), out Key hotkey) && hotkey.ToString() != c.OverlayHotkey)
+            if (_picker.Draw(HotkeyPickerId, KeyNames.Label(c.OverlayHotkey), KeyWidth, false, out Key hotkey, out _) && hotkey.ToString() != c.OverlayHotkey)
             {
                 c.OverlayHotkey = hotkey.ToString();
                 changed = true;
             }
+            DrawPickerHint(HotkeyPickerId, false);
             GUILayout.EndHorizontal();
             if (_showDescriptions) GUILayout.Label("Opens and closes this window.", _dim);
 

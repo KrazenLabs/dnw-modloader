@@ -11,6 +11,7 @@ namespace DnWModLoader
     {
         private static readonly HashSet<Key> Down = new HashSet<Key>();
         private static readonly List<Key> Pressed = new List<Key>();
+        private static readonly Key[] NoKeys = new Key[0];
         private static bool _wanted;
         private static bool _active;
         private static bool _failed;
@@ -66,12 +67,14 @@ namespace DnWModLoader
             return _pressedFrame == Time.frameCount && Pressed.Contains(key);
         }
 
-        public static bool TryGetPressedThisFrame(out Key key)
+        public static IReadOnlyList<Key> KeysPressedThisFrame
         {
-            key = Key.None;
-            if (_pressedFrame != Time.frameCount || Pressed.Count == 0) return false;
-            key = Pressed[0];
-            return true;
+            get { return _pressedFrame == Time.frameCount ? Pressed : NoKeys; }
+        }
+
+        public static bool IsDown(Key key)
+        {
+            return _active && Down.Contains(key);
         }
 
         private static void OnEvent(InputEventPtr eventPtr, InputDevice device)
