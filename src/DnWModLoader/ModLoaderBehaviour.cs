@@ -47,6 +47,8 @@ namespace DnWModLoader
             HostHooks.Run(UpdateHook);
             try { DnWModLoader.Config.ModConfig.FlushPending(); }
             catch (Exception e) { ModLoader.Logger.Exception(e, "Saving configs failed"); }
+            try { DnWModLoader.Config.DeferredSaves.FlushDue(); }
+            catch (Exception e) { ModLoader.Logger.Exception(e, "Saving plugin configs failed"); }
         }
 
         private void FixedUpdate()
@@ -79,6 +81,8 @@ namespace DnWModLoader
             ModLoader.Dispatch(nameof(Mod.OnApplicationQuit), QuitAction);
             try { DnWModLoader.Config.ModConfig.FlushAll(); }
             catch (Exception e) { ModLoader.Logger.Exception(e, "Saving configs on quit failed"); }
+            try { DnWModLoader.Config.DeferredSaves.FlushAll(); }
+            catch (Exception e) { ModLoader.Logger.Exception(e, "Saving plugin configs on quit failed"); }
             ModLoader.Shutdown();
         }
 

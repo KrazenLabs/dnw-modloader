@@ -185,7 +185,7 @@ namespace DnWModLoader.BepInExCompat
             if (scanned.Plugins.Count > 0 || scanned.Definition == null) return;
             var module = scanned.Definition.MainModule;
             if (module.AssemblyReferences.Any(r => r.Name == "BepInEx.Core" || r.Name == "BepInEx.Unity.Mono" || r.Name == "BepInEx.Unity.IL2CPP"))
-                Log(BepInLogging.LogLevel.Warning, Path.GetFileName(scanned.Path) + "BepInEx 6 not currently supported.");
+                Log(BepInLogging.LogLevel.Warning, Path.GetFileName(scanned.Path) + ": BepInEx 6 not currently supported.");
         }
 
         // Picks one version per GUID and sorts the plugin load order
@@ -401,8 +401,15 @@ namespace DnWModLoader.BepInExCompat
                 Chainloader.AddLoaded(instance);
 
                 container.Status = ModStatus.Loaded;
-                container.Error = firstException != null ? "Awake threw " + firstException : null;
-                container.Settings = new BepInExSettingsSource(instance.Config);
+                if (instance.Config == null)
+                {
+                    container.Error = "its config could not be created" + (firstException != null ? ": " + firstException : "");
+                }
+                else
+                {
+                    container.Error = firstException != null ? "Awake threw " + firstException : null;
+                    container.Settings = new BepInExSettingsSource(instance.Config);
+                }
                 container.PatchedMethodCount = CountPatches(guid);
                 return true;
             }

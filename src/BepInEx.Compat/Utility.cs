@@ -169,7 +169,7 @@ namespace BepInEx
     {
         public static IEnumerable<TOut> RunParallel<TIn, TOut>(this IEnumerable<TIn> data, Func<TIn, TOut> work, int workerCount = -1)
         {
-            return RunParallel((IList<TIn>)data.ToList(), work, workerCount);
+            foreach (var result in RunParallel((IList<TIn>)data.ToList(), work, workerCount)) yield return result;
         }
 
         // Results come back in no particular order
@@ -177,36 +177,51 @@ namespace BepInEx
         {
             if (workerCount < 0) workerCount = Math.Max(2, Environment.ProcessorCount);
             else if (workerCount == 0) throw new ArgumentException("Need at least 1 worker", nameof(workerCount));
+            if (data.Count == 0) yield break;
 
-            var results = new List<TOut>(data.Count);
-            if (data.Count == 0) return results;
             int perWorker = (data.Count + workerCount - 1) / workerCount;
-            int pending = 0;
+            int workers = (data.Count + perWorker - 1) / perWorker;
+            int finished = 0;
             Exception failure = null;
             var sync = new object();
-            using (var finished = new ManualResetEvent(false))
+            var ready = new List<TOut>(data.Count);
+            var signal = new AutoResetEvent(false);
+            for (int w = 0; w < workers; w++)
             {
-                for (int w = 0; w < workerCount; w++)
+                int first = w * perWorker, last = Math.Min(first + perWorker, data.Count);
+                ThreadPool.QueueUserWorkItem(_ =>
                 {
-                    int first = w * perWorker, last = Math.Min(first + perWorker, data.Count);
-                    if (first >= last) break;
-                    Interlocked.Increment(ref pending);
-                    ThreadPool.QueueUserWorkItem(_ =>
+                    var local = new List<TOut>(last - first);
+                    try
                     {
-                        var local = new List<TOut>(last - first);
-                        try
-                        {
-                            for (int i = first; i < last && failure == null; i++) local.Add(work(data[i]));
-                        }
-                        catch (Exception e) { failure = e; }
-                        lock (sync) results.AddRange(local);
-                        if (Interlocked.Decrement(ref pending) == 0) finished.Set();
-                    });
-                }
-                finished.WaitOne();
+                        for (int i = first; i < last && Volatile.Read(ref failure) == null; i++) local.Add(work(data[i]));
+                    }
+                    catch (Exception e) { Interlocked.CompareExchange(ref failure, e, null); }
+                    lock (sync)
+                    {
+                        ready.AddRange(local);
+                        finished++;
+                        signal.Set();
+                    }
+                });
             }
+
+            bool done;
+            do
+            {
+                signal.WaitOne();
+                TOut[] batch;
+                lock (sync)
+                {
+                    batch = ready.ToArray();
+                    ready.Clear();
+                    done = finished == workers;
+                }
+                foreach (var result in batch) yield return result;
+            } while (!done);
+
+            signal.Close();
             if (failure != null) throw new TargetInvocationException("An exception was thrown inside one of the threads", failure);
-            return results;
         }
     }
 

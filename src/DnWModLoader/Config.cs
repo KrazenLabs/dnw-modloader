@@ -244,7 +244,7 @@ namespace DnWModLoader.Config
         internal static readonly JsonSerializer Serializer = JsonSerializer.Create(SerializerSettings);
         private static readonly List<ModConfig> Registry = new List<ModConfig>();
         private static readonly object RegistrySync = new object();
-        private static readonly TimeSpan SaveDelay = TimeSpan.FromSeconds(0.5);
+        internal static readonly TimeSpan SaveDelay = TimeSpan.FromSeconds(0.5);
         private static readonly TimeSpan RetryDelay = TimeSpan.FromSeconds(10);
         private static volatile bool _savesPending;
 

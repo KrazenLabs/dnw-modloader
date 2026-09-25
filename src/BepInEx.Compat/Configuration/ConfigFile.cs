@@ -140,8 +140,9 @@ namespace BepInEx.Configuration
     {
         private readonly BepInPlugin _ownerMetadata;
         private readonly object _ioLock = new object();
-        private readonly Dictionary<ConfigDefinition, string> _orphaned = new Dictionary<ConfigDefinition, string>();
         private bool _saveFailed;
+
+        private Dictionary<ConfigDefinition, string> OrphanedEntries { get; } = new Dictionary<ConfigDefinition, string>();
 
         protected Dictionary<ConfigDefinition, ConfigEntryBase> Entries { get; } = new Dictionary<ConfigDefinition, ConfigEntryBase>();
 
@@ -182,12 +183,13 @@ namespace BepInEx.Configuration
         {
             lock (_ioLock)
             {
-                _orphaned.Clear();
+                OrphanedEntries.Clear();
                 string section = string.Empty;
                 foreach (var rawLine in File.ReadAllLines(ConfigFilePath))
                 {
                     string line = rawLine.Trim();
                     if (line.StartsWith("#")) continue;
+                    if (section.Length == 0 && IsUnprefixedHeader(line)) continue;
                     if (line.StartsWith("[") && line.EndsWith("]"))
                     {
                         section = line.Substring(1, line.Length - 2);
@@ -199,10 +201,16 @@ namespace BepInEx.Configuration
                     var definition = new ConfigDefinition(section, pair[0].Trim());
                     string value = pair[1].Trim();
                     if (Entries.TryGetValue(definition, out var entry)) entry.SetSerializedValue(value);
-                    else _orphaned[definition] = value;
+                    else OrphanedEntries[definition] = value;
                 }
             }
             RaiseEach(ConfigReloaded, handler => handler(this, EventArgs.Empty));
+        }
+
+        private static bool IsUnprefixedHeader(string line)
+        {
+            return line.StartsWith("Settings file created by plugin ", StringComparison.Ordinal)
+                   || line.StartsWith("Plugin GUID: ", StringComparison.Ordinal);
         }
 
         public void Save()
@@ -229,14 +237,14 @@ namespace BepInEx.Configuration
             if (directory != null) Directory.CreateDirectory(directory);
 
             var lines = Entries.Select(x => new { x.Key, Entry = x.Value, Value = x.Value.GetSerializedValue() })
-                .Concat(_orphaned.Select(x => new { x.Key, Entry = (ConfigEntryBase)null, x.Value }));
+                .Concat(OrphanedEntries.Select(x => new { x.Key, Entry = (ConfigEntryBase)null, x.Value }));
 
             using (var writer = new StreamWriter(ConfigFilePath, false, Utility.UTF8NoBom))
             {
                 if (_ownerMetadata != null)
                 {
-                    writer.WriteLine("Settings file created by plugin " + _ownerMetadata.Name + " v" + _ownerMetadata.Version);
-                    writer.WriteLine("Plugin GUID: " + _ownerMetadata.GUID);
+                    writer.WriteLine("## Settings file was created by plugin " + _ownerMetadata.Name + " v" + _ownerMetadata.Version);
+                    writer.WriteLine("## Plugin GUID: " + _ownerMetadata.GUID);
                     writer.WriteLine();
                 }
                 foreach (var section in lines.GroupBy(x => x.Key.Section).OrderBy(x => x.Key))
@@ -295,10 +303,10 @@ namespace BepInEx.Configuration
 
                 var entry = new ConfigEntry<T>(this, configDefinition, defaultValue, configDescription);
                 Entries[configDefinition] = entry;
-                if (_orphaned.TryGetValue(configDefinition, out string stored))
+                if (OrphanedEntries.TryGetValue(configDefinition, out string stored))
                 {
                     entry.SetSerializedValue(stored);
-                    _orphaned.Remove(configDefinition);
+                    OrphanedEntries.Remove(configDefinition);
                 }
                 if (SaveOnConfigSet) Save();
                 return entry;

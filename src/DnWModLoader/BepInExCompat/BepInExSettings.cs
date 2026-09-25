@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Globalization;
+using System.IO;
 using System.Linq;
 using System.Reflection;
 using DnWModLoader.Config;
@@ -15,33 +16,35 @@ namespace DnWModLoader.BepInExCompat
         private readonly BepInConfig.ConfigFile _file;
         private readonly Dictionary<BepInConfig.ConfigDefinition, BepInExSettingEntry> _adapters = new Dictionary<BepInConfig.ConfigDefinition, BepInExSettingEntry>();
         private List<KeyValuePair<string, List<ConfigEntryBase>>> _sections = new List<KeyValuePair<string, List<ConfigEntryBase>>>();
-        private int _builtFromCount = -1;
+        private BepInConfig.ConfigEntryBase[] _builtFrom;
+        private bool _dirty;
 
         public BepInExSettingsSource(BepInConfig.ConfigFile file)
         {
             _file = file;
         }
 
-        public bool HasPendingChanges { get { return false; } }
+        public bool HasPendingChanges { get { return _dirty; } }
 
         public bool HasEntries { get { return _file.Count > 0; } }
 
         public IList<KeyValuePair<string, List<ConfigEntryBase>>> EntriesBySection()
         {
             // Plugins can bind or remove settings at any time. Help.
-            int count = _file.Count;
-            if (count != _builtFromCount) Rebuild(count);
+            var entries = ((IDictionary<BepInConfig.ConfigDefinition, BepInConfig.ConfigEntryBase>)_file).Values.ToArray();
+            if (_builtFrom == null || !entries.SequenceEqual(_builtFrom)) Rebuild(entries);
             return _sections;
         }
 
-        private void Rebuild(int count)
+        private void Rebuild(BepInConfig.ConfigEntryBase[] entries)
         {
             var sections = new List<KeyValuePair<string, List<ConfigEntryBase>>>();
             var index = new Dictionary<string, List<ConfigEntryBase>>(StringComparer.Ordinal);
             var adapters = new Dictionary<BepInConfig.ConfigDefinition, BepInExSettingEntry>();
-            foreach (var definition in _file.Keys)
+            foreach (var entry in entries)
             {
-                if (!_adapters.TryGetValue(definition, out var adapter)) adapter = new BepInExSettingEntry(_file[definition]);
+                var definition = entry.Definition;
+                if (!_adapters.TryGetValue(definition, out var adapter) || !adapter.Wraps(entry)) adapter = new BepInExSettingEntry(this, entry);
                 adapter.BindIndex = adapters.Count;
                 adapters[definition] = adapter;
                 if (!index.TryGetValue(definition.Section, out var list))
@@ -58,7 +61,7 @@ namespace DnWModLoader.BepInExCompat
             _adapters.Clear();
             foreach (var pair in adapters) _adapters[pair.Key] = pair.Value;
             _sections = sections;
-            _builtFromCount = count;
+            _builtFrom = entries;
         }
 
         public SectionInfo GetSectionInfo(string section)
@@ -68,16 +71,59 @@ namespace DnWModLoader.BepInExCompat
 
         public void Reload()
         {
-            _file.Reload();
+            if (!File.Exists(_file.ConfigFilePath)) return;
+            bool changed = false;
+            EventHandler<BepInConfig.SettingChangedEventArgs> onChanged = (sender, args) => changed = true;
+            bool saveOnSet = _file.SaveOnConfigSet;
+            _file.SettingChanged += onChanged;
+            _file.SaveOnConfigSet = false;
+            try { _file.Reload(); }
+            finally
+            {
+                _file.SaveOnConfigSet = saveOnSet;
+                _file.SettingChanged -= onChanged;
+            }
+            if (saveOnSet && (changed || _dirty)) SaveNow();
+        }
+
+        internal void Apply(Action assign)
+        {
+            bool changed = false;
+            EventHandler<BepInConfig.SettingChangedEventArgs> onChanged = (sender, args) => changed = true;
+            bool saveOnSet = _file.SaveOnConfigSet;
+            _file.SettingChanged += onChanged;
+            _file.SaveOnConfigSet = false;
+            try { assign(); }
+            finally
+            {
+                _file.SaveOnConfigSet = saveOnSet;
+                _file.SettingChanged -= onChanged;
+            }
+            if (saveOnSet && changed) ScheduleSave();
+        }
+
+        private void ScheduleSave()
+        {
+            _dirty = true;
+            DeferredSaves.Schedule(this, SaveNow);
+        }
+
+        private void SaveNow()
+        {
+            _dirty = false;
+            DeferredSaves.Cancel(this);
+            _file.Save();
         }
     }
 
     internal sealed class BepInExSettingEntry : ConfigEntryBase
     {
+        private readonly BepInExSettingsSource _source;
         private readonly BepInConfig.ConfigEntryBase _entry;
 
-        public BepInExSettingEntry(BepInConfig.ConfigEntryBase entry)
+        public BepInExSettingEntry(BepInExSettingsSource source, BepInConfig.ConfigEntryBase entry)
         {
+            _source = source;
             _entry = entry;
             Section = entry.Definition.Section;
             Key = entry.Definition.Key;
@@ -85,12 +131,14 @@ namespace DnWModLoader.BepInExCompat
             Meta = MetaFor(entry);
         }
 
+        internal bool Wraps(BepInConfig.ConfigEntryBase entry) { return ReferenceEquals(_entry, entry); }
+
         public override Type ValueType { get { return _entry.SettingType; } }
 
         public override object BoxedValue
         {
             get { return _entry.BoxedValue; }
-            set { _entry.BoxedValue = SettingValues.Coerce(value, _entry.SettingType); }
+            set { _source.Apply(() => _entry.BoxedValue = SettingValues.Coerce(value, _entry.SettingType)); }
         }
 
         public override object BoxedDefault { get { return _entry.DefaultValue; } }
@@ -99,7 +147,7 @@ namespace DnWModLoader.BepInExCompat
 
         public override void Reset()
         {
-            _entry.BoxedValue = _entry.DefaultValue;
+            _source.Apply(() => _entry.BoxedValue = _entry.DefaultValue);
         }
 
         public override bool TrySetFromString(string text, out string error)
@@ -109,7 +157,7 @@ namespace DnWModLoader.BepInExCompat
             if (!SettingValues.TryParse(text, type, t => BepInConfig.TomlTypeConverter.ConvertToValue(t.Trim(), type), out parsed, out error)) return false;
             try
             {
-                _entry.BoxedValue = parsed;
+                _source.Apply(() => _entry.BoxedValue = parsed);
                 return true;
             }
             catch (Exception e)
