@@ -1,6 +1,5 @@
 using System;
 using System.Diagnostics;
-using System.Text;
 using DnWModLoader.Logging;
 using UnityEngine;
 
@@ -21,6 +20,7 @@ namespace DnWModLoader
         private readonly SettingsPanel _settings;
         private readonly OverlayHotkey _hotkey;
         private readonly GameCursor _cursor = new GameCursor();
+        private readonly LogView _log = new LogView();
         private readonly float _bannerUntil;
         private readonly bool _showDirect3D12Warning;
         private readonly bool _showParallelLoaderWarning;
@@ -31,7 +31,6 @@ namespace DnWModLoader
         private int _tab = SettingsTab;
         private int _logFilter = 1;
         private Vector2 _modsScroll;
-        private Vector2 _logScroll;
         private Rect _windowRect = new Rect(40, 40, WindowWidth, WindowHeight);
         private NoticeState _updateNotice;
 
@@ -280,15 +279,7 @@ namespace DnWModLoader
         {
             _logFilter = GUILayout.Toolbar(_logFilter, LogFilters, GUILayout.Width(320));
             LogLevel min = _logFilter == 0 ? LogLevel.Debug : _logFilter == 1 ? LogLevel.Info : _logFilter == 2 ? LogLevel.Warning : LogLevel.Error;
-
-            var text = new StringBuilder();
-            foreach (var entry in Log.GetRecent())
-                if (entry.Level >= min) text.Append(entry).Append('\n');
-            if (text.Length == 0) text.Append("(nothing logged at this level yet)");
-
-            _logScroll = GUILayout.BeginScrollView(_logScroll, GUILayout.ExpandHeight(true));
-            GUILayout.Label(text.ToString(), _logStyle);
-            GUILayout.EndScrollView();
+            _log.Draw(min, _logStyle);
         }
 
         private string StartupBannerText()

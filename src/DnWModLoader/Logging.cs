@@ -42,13 +42,28 @@ namespace DnWModLoader.Logging
         }
     }
 
+    internal sealed class LogLine
+    {
+        public LogLine(LogEntry entry, string text, long sequence)
+        {
+            Entry = entry;
+            Text = text;
+            Sequence = sequence;
+        }
+
+        public LogEntry Entry { get; }
+        public string Text { get; }
+        public long Sequence { get; }
+    }
+
     public static class Log
     {
-        private const int RecentCapacity = 500;
+        internal const int RecentCapacity = 500;
         private const string UnityEchoMarker = "[DnW] ";
 
         private static readonly object Sync = new object();
-        private static readonly Queue<LogEntry> Recent = new Queue<LogEntry>(RecentCapacity);
+        private static readonly Queue<LogLine> Recent = new Queue<LogLine>(RecentCapacity);
+        private static long _sequence;
         private static StreamWriter _writer;
 
         public static LogLevel MinimumLevel = LogLevel.Debug;
@@ -121,7 +136,7 @@ namespace DnWModLoader.Logging
             lock (Sync)
             {
                 if (Recent.Count >= RecentCapacity) Recent.Dequeue();
-                Recent.Enqueue(entry);
+                Recent.Enqueue(new LogLine(entry, line, ++_sequence));
                 try { _writer?.WriteLine(line); } catch { }
             }
 
@@ -146,7 +161,24 @@ namespace DnWModLoader.Logging
 
         public static LogEntry[] GetRecent()
         {
-            lock (Sync) return Recent.ToArray();
+            lock (Sync)
+            {
+                var entries = new LogEntry[Recent.Count];
+                int i = 0;
+                foreach (var line in Recent) entries[i++] = line.Entry;
+                return entries;
+            }
+        }
+
+        internal static long CopyRecent(long after, List<LogLine> target)
+        {
+            lock (Sync)
+            {
+                if (_sequence > after)
+                    foreach (var line in Recent)
+                        if (line.Sequence > after) target.Add(line);
+                return _sequence;
+            }
         }
 
         internal static bool IsEchoedLine(string condition)

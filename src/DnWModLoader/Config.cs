@@ -253,6 +253,10 @@ namespace DnWModLoader.Config
         private readonly List<ConfigEntryBase> _ordered = new List<ConfigEntryBase>();
         private readonly Dictionary<string, SectionInfo> _sections = new Dictionary<string, SectionInfo>(StringComparer.Ordinal);
         private JObject _document = new JObject();
+        private int _version;
+        private List<KeyValuePair<string, List<ConfigEntryBase>>> _grouped;
+        private int _groupedVersion;
+        private int[] _groupedOrders;
         private bool _suppressSave;
         private bool _dirty;
         private DateTime _saveDueAt;
@@ -336,7 +340,11 @@ namespace DnWModLoader.Config
                 {
                     if (existing is ConfigEntry<T> typed)
                     {
-                        if (meta != null) typed.Meta = meta;
+                        if (meta != null)
+                        {
+                            typed.Meta = meta;
+                            _version++;
+                        }
                         if (!string.IsNullOrEmpty(description)) typed.Description = description;
                         return typed;
                     }
@@ -346,6 +354,7 @@ namespace DnWModLoader.Config
                 var entry = new ConfigEntry<T>(section, key, defaultValue, description, meta) { Owner = this, BindIndex = _ordered.Count };
                 _entries[id] = entry;
                 _ordered.Add(entry);
+                _version++;
 
                 bool needsWrite = true;
                 var token = GetValueToken(section, key);
@@ -381,6 +390,7 @@ namespace DnWModLoader.Config
                 info.Description = description;
                 info.Order = order;
                 info.Advanced = advanced;
+                _version++;
                 return info;
             }
         }
@@ -399,24 +409,63 @@ namespace DnWModLoader.Config
         {
             lock (_sync)
             {
-                var groups = new List<KeyValuePair<string, List<ConfigEntryBase>>>();
-                var index = new Dictionary<string, List<ConfigEntryBase>>(StringComparer.Ordinal);
-                foreach (var entry in _ordered)
-                {
-                    if (!index.TryGetValue(entry.Section, out var list))
-                    {
-                        list = new List<ConfigEntryBase>();
-                        index[entry.Section] = list;
-                        groups.Add(new KeyValuePair<string, List<ConfigEntryBase>>(entry.Section, list));
-                    }
-                    list.Add(entry);
-                }
-                foreach (var group in groups)
-                    group.Value.Sort((a, b) => a.Meta.Order != b.Meta.Order ? a.Meta.Order.CompareTo(b.Meta.Order) : a.BindIndex.CompareTo(b.BindIndex));
-                var ordered = groups.Select((g, i) => new { g, i, order = _sections.TryGetValue(g.Key, out var info) ? info.Order : 0 })
-                                    .OrderBy(x => x.order).ThenBy(x => x.i).Select(x => x.g).ToList();
-                return ordered;
+                var copy = new List<KeyValuePair<string, List<ConfigEntryBase>>>();
+                foreach (var group in Grouped()) copy.Add(new KeyValuePair<string, List<ConfigEntryBase>>(group.Key, new List<ConfigEntryBase>(group.Value)));
+                return copy;
             }
+        }
+
+        IList<KeyValuePair<string, List<ConfigEntryBase>>> ISettingsSource.EntriesBySection()
+        {
+            lock (_sync) return Grouped();
+        }
+
+        private List<KeyValuePair<string, List<ConfigEntryBase>>> Grouped()
+        {
+            if (_grouped != null && _groupedVersion == _version && OrdersUnchanged()) return _grouped;
+            _grouped = GroupEntries();
+            _groupedVersion = _version;
+            _groupedOrders = new int[_ordered.Count + _grouped.Count];
+            int i = 0;
+            foreach (var entry in _ordered) _groupedOrders[i++] = entry.Meta.Order;
+            foreach (var group in _grouped) _groupedOrders[i++] = SectionOrder(group.Key);
+            return _grouped;
+        }
+
+        private bool OrdersUnchanged()
+        {
+            int i = 0;
+            foreach (var entry in _ordered)
+                if (entry.Meta.Order != _groupedOrders[i++]) return false;
+            foreach (var group in _grouped)
+                if (SectionOrder(group.Key) != _groupedOrders[i++]) return false;
+            return true;
+        }
+
+        private int SectionOrder(string section)
+        {
+            return _sections.TryGetValue(section, out var info) ? info.Order : 0;
+        }
+
+        private List<KeyValuePair<string, List<ConfigEntryBase>>> GroupEntries()
+        {
+            var groups = new List<KeyValuePair<string, List<ConfigEntryBase>>>();
+            var index = new Dictionary<string, List<ConfigEntryBase>>(StringComparer.Ordinal);
+            foreach (var entry in _ordered)
+            {
+                if (!index.TryGetValue(entry.Section, out var list))
+                {
+                    list = new List<ConfigEntryBase>();
+                    index[entry.Section] = list;
+                    groups.Add(new KeyValuePair<string, List<ConfigEntryBase>>(entry.Section, list));
+                }
+                list.Add(entry);
+            }
+            foreach (var group in groups)
+                group.Value.Sort((a, b) => a.Meta.Order != b.Meta.Order ? a.Meta.Order.CompareTo(b.Meta.Order) : a.BindIndex.CompareTo(b.BindIndex));
+            var ordered = groups.Select((g, i) => new { g, i, order = SectionOrder(g.Key) })
+                                .OrderBy(x => x.order).ThenBy(x => x.i).Select(x => x.g).ToList();
+            return ordered;
         }
 
         // Reset section to default values

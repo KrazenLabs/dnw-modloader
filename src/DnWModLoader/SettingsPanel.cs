@@ -31,6 +31,9 @@ namespace DnWModLoader
         private readonly Dictionary<string, bool> _expanded = new Dictionary<string, bool>();
         private readonly Dictionary<string, PendingEdit> _edits = new Dictionary<string, PendingEdit>();
         private readonly Dictionary<string, KeyValuePair<string, float>> _errors = new Dictionary<string, KeyValuePair<string, float>>();
+        private readonly Dictionary<ConfigEntryBase, string> _controlIds = new Dictionary<ConfigEntryBase, string>();
+        private readonly Dictionary<ModContainer, string[]> _titles = new Dictionary<ModContainer, string[]>();
+        private readonly string[] _loaderTitles = { ">  DnW Mod Loader  " + ModLoader.Version, "v  DnW Mod Loader  " + ModLoader.Version };
 
         private string _search = "";
         private bool _showDescriptions = true;
@@ -130,22 +133,29 @@ namespace DnWModLoader
         {
             if (mod.Status != ModStatus.Loaded || mod.Settings == null) return false;
             var config = mod.Settings;
-            var sections = VisibleSections(config, mod.Info, filter);
-            if (sections.Count == 0) return false;
-
             string modId = mod.Info.Id;
             bool filtering = filter.Length > 0;
             bool expanded = filtering || IsExpanded(modId, false);
 
+            List<KeyValuePair<string, List<ConfigEntryBase>>> sections = null;
+            bool anyChanged = false;
+            if (expanded)
+            {
+                sections = VisibleSections(config, mod.Info, filter);
+                if (sections.Count == 0) return false;
+                foreach (var section in sections)
+                    if (AnyChanged(section.Value)) { anyChanged = true; break; }
+            }
+            else if (!HasVisibleEntries(config, out anyChanged)) return false;
+
             GUILayout.BeginVertical(_box);
             GUILayout.BeginHorizontal();
-            if (GUILayout.Button((expanded ? "v  " : ">  ") + mod.Info.Name + "  " + mod.Info.VersionString, _header, GUILayout.ExpandWidth(true)) && !filtering)
+            if (GUILayout.Button(Title(mod, expanded), _header, GUILayout.ExpandWidth(true)) && !filtering)
                 _expanded[modId] = !expanded;
             GUILayout.Label(config.HasPendingChanges ? "saving..." : "", _small, GUILayout.Width(60));
-            var shownEntries = new List<ConfigEntryBase>();
-            foreach (var section in sections) shownEntries.AddRange(section.Value);
-            GUI.enabled = AnyChanged(shownEntries);
-            if (GUILayout.Button("Reset all", GUILayout.Width(70))) ResetEntries(modId, shownEntries);
+            GUI.enabled = anyChanged;
+            if (GUILayout.Button("Reset all", GUILayout.Width(70)))
+                foreach (var section in sections ?? VisibleSections(config, mod.Info, filter)) ResetEntries(modId, section.Value);
             GUI.enabled = true;
             GUILayout.EndHorizontal();
 
@@ -155,27 +165,72 @@ namespace DnWModLoader
             return true;
         }
 
+        private string Title(ModContainer mod, bool expanded)
+        {
+            if (!_titles.TryGetValue(mod, out var titles))
+            {
+                string name = mod.Info.Name + "  " + mod.Info.VersionString;
+                titles = new[] { ">  " + name, "v  " + name };
+                _titles[mod] = titles;
+            }
+            return titles[expanded ? 1 : 0];
+        }
+
         private List<KeyValuePair<string, List<ConfigEntryBase>>> VisibleSections(ISettingsSource config, ModInfo info, string filter)
         {
             var result = new List<KeyValuePair<string, List<ConfigEntryBase>>>();
             bool filtering = filter.Length > 0;
             bool modMatches = filtering && Matches(filter, info.Name, info.Id);
-            foreach (var section in config.EntriesBySection())
+            var sections = config.EntriesBySection();
+            for (int i = 0; i < sections.Count; i++)
             {
+                var section = sections[i];
                 var sectionInfo = config.GetSectionInfo(section.Key);
-                if (sectionInfo != null && sectionInfo.Advanced && !_showAdvanced && !filtering) continue;
+                if (!SectionShown(sectionInfo, filtering)) continue;
                 bool sectionMatches = modMatches || (filtering && Matches(filter, section.Key, sectionInfo?.DisplayName, sectionInfo?.Description));
                 var entries = new List<ConfigEntryBase>();
                 foreach (var entry in section.Value)
                 {
-                    if (entry.Meta.Hidden) continue;
-                    if (entry.Meta.Advanced && !_showAdvanced && !filtering) continue;
+                    if (!EntryShown(entry, filtering)) continue;
                     if (filtering && !sectionMatches && !Matches(filter, entry.Key, entry.DisplayName, entry.Description)) continue;
                     entries.Add(entry);
                 }
                 if (entries.Count > 0) result.Add(new KeyValuePair<string, List<ConfigEntryBase>>(section.Key, entries));
             }
             return result;
+        }
+
+        private bool HasVisibleEntries(ISettingsSource config, out bool anyChanged)
+        {
+            bool any = false;
+            anyChanged = false;
+            var sections = config.EntriesBySection();
+            for (int i = 0; i < sections.Count; i++)
+            {
+                var section = sections[i];
+                if (!SectionShown(config.GetSectionInfo(section.Key), false)) continue;
+                foreach (var entry in section.Value)
+                {
+                    if (!EntryShown(entry, false)) continue;
+                    any = true;
+                    if (!entry.IsDefault)
+                    {
+                        anyChanged = true;
+                        return true;
+                    }
+                }
+            }
+            return any;
+        }
+
+        private bool SectionShown(SectionInfo info, bool filtering)
+        {
+            return info == null || !info.Advanced || _showAdvanced || filtering;
+        }
+
+        private bool EntryShown(ConfigEntryBase entry, bool filtering)
+        {
+            return !entry.Meta.Hidden && (!entry.Meta.Advanced || _showAdvanced || filtering);
         }
 
         private void DrawSection(string modId, ISettingsSource config, string sectionKey, List<ConfigEntryBase> entries)
@@ -195,9 +250,14 @@ namespace DnWModLoader
                 DrawEntry(entry, ControlId(modId, entry));
         }
 
-        private static string ControlId(string modId, ConfigEntryBase entry)
+        private string ControlId(string modId, ConfigEntryBase entry)
         {
-            return ControlPrefix + modId + "." + entry.Section + "." + entry.Key;
+            if (!_controlIds.TryGetValue(entry, out var id))
+            {
+                id = ControlPrefix + modId + "." + entry.Section + "." + entry.Key;
+                _controlIds[entry] = id;
+            }
+            return id;
         }
 
         private static bool AnyChanged(List<ConfigEntryBase> entries)
@@ -560,7 +620,7 @@ namespace DnWModLoader
 
             GUILayout.BeginVertical(_box);
             GUILayout.BeginHorizontal();
-            if (GUILayout.Button((expanded ? "v  " : ">  ") + "DnW Mod Loader  " + ModLoader.Version, _header, GUILayout.ExpandWidth(true)) && !filtering)
+            if (GUILayout.Button(_loaderTitles[expanded ? 1 : 0], _header, GUILayout.ExpandWidth(true)) && !filtering)
                 _expanded[LoaderId] = !expanded;
             GUILayout.EndHorizontal();
             if (expanded) DrawLoaderEntries();

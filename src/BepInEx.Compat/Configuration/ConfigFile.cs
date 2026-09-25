@@ -18,6 +18,8 @@ namespace BepInEx.Configuration
 
         public abstract object BoxedValue { get; set; }
 
+        internal abstract bool IsDefaultValue { get; }
+
         internal ConfigEntryBase(ConfigFile configFile, ConfigDefinition definition, Type settingType, object defaultValue, ConfigDescription configDescription)
         {
             ConfigFile = configFile ?? throw new ArgumentNullException(nameof(configFile));
@@ -107,6 +109,11 @@ namespace BepInEx.Configuration
         {
             get { return Value; }
             set { Value = (T)value; }
+        }
+
+        internal override bool IsDefaultValue
+        {
+            get { return EqualityComparer<T>.Default.Equals(_value, (T)DefaultValue); }
         }
     }
 
@@ -403,6 +410,18 @@ namespace BepInEx.Configuration
         public int Count
         {
             get { lock (_ioLock) return Entries.Count; }
+        }
+
+        internal bool SameEntries(ConfigEntryBase[] entries)
+        {
+            lock (_ioLock)
+            {
+                if (entries == null || entries.Length != Entries.Count) return false;
+                int i = 0;
+                foreach (var entry in Entries.Values)
+                    if (!ReferenceEquals(entry, entries[i++])) return false;
+                return true;
+            }
         }
 
         public bool IsReadOnly { get { return false; } }

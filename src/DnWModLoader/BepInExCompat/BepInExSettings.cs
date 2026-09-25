@@ -31,8 +31,7 @@ namespace DnWModLoader.BepInExCompat
         public IList<KeyValuePair<string, List<ConfigEntryBase>>> EntriesBySection()
         {
             // Plugins can bind or remove settings at any time. Help.
-            var entries = ((IDictionary<BepInConfig.ConfigDefinition, BepInConfig.ConfigEntryBase>)_file).Values.ToArray();
-            if (_builtFrom == null || !entries.SequenceEqual(_builtFrom)) Rebuild(entries);
+            if (!_file.SameEntries(_builtFrom)) Rebuild(((IDictionary<BepInConfig.ConfigDefinition, BepInConfig.ConfigEntryBase>)_file).Values.ToArray());
             return _sections;
         }
 
@@ -143,7 +142,7 @@ namespace DnWModLoader.BepInExCompat
 
         public override object BoxedDefault { get { return _entry.DefaultValue; } }
 
-        public override bool IsDefault { get { return Equals(_entry.BoxedValue, _entry.DefaultValue); } }
+        public override bool IsDefault { get { return _entry.IsDefaultValue; } }
 
         public override void Reset()
         {
