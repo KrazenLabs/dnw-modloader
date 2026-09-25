@@ -70,6 +70,15 @@ namespace DnWModLoader
                 if (e.type != EventType.Layout) return false;
                 try
                 {
+                    if (GameInputBlock.Capturing)
+                    {
+                        if (GameInputBlock.WasPressedThisFrame(Key.Escape))
+                        {
+                            cancelled = true;
+                            return false;
+                        }
+                        return GameInputBlock.TryGetPressedThisFrame(out key);
+                    }
                     var keyboard = Keyboard.current;
                     if (keyboard == null) return false;
                     if (keyboard.escapeKey.wasPressedThisFrame)

@@ -10,6 +10,11 @@ namespace DnWModLoader
         private static readonly Action<Mod> LateUpdateAction = m => m.OnLateUpdate();
         private static readonly Action<Mod> GuiAction = m => m.OnGUI();
         private static readonly Action<Mod> QuitAction = m => m.OnApplicationQuit();
+        private static readonly Action<HostHooks> EarlyUpdateHook = h => h.EarlyUpdate();
+        private static readonly Action<HostHooks> UpdateHook = h => h.Update();
+        private static readonly Action<HostHooks> FixedUpdateHook = h => h.FixedUpdate();
+        private static readonly Action<HostHooks> LateUpdateHook = h => h.LateUpdate();
+        private static readonly Action<HostHooks> GuiHook = h => h.OnGUI();
 
         internal Overlay Overlay { get; private set; }
         private int _overlayFailures;
@@ -37,7 +42,9 @@ namespace DnWModLoader
             if (!_started) return;
             try { Overlay?.Update(); }
             catch (Exception e) { ReportOverlayFailure(e); }
+            HostHooks.Run(EarlyUpdateHook);
             ModLoader.Dispatch(nameof(Mod.OnUpdate), UpdateAction);
+            HostHooks.Run(UpdateHook);
             try { DnWModLoader.Config.ModConfig.FlushPending(); }
             catch (Exception e) { ModLoader.Logger.Exception(e, "Saving configs failed"); }
         }
@@ -46,6 +53,7 @@ namespace DnWModLoader
         {
             if (!_started) return;
             ModLoader.Dispatch(nameof(Mod.OnFixedUpdate), FixedUpdateAction);
+            HostHooks.Run(FixedUpdateHook);
         }
 
         private void LateUpdate()
@@ -54,6 +62,7 @@ namespace DnWModLoader
             try { Overlay?.LateUpdate(); }
             catch (Exception e) { ReportOverlayFailure(e); }
             ModLoader.Dispatch(nameof(Mod.OnLateUpdate), LateUpdateAction);
+            HostHooks.Run(LateUpdateHook);
         }
 
         private void OnGUI()
@@ -62,6 +71,7 @@ namespace DnWModLoader
             try { Overlay?.OnGUI(); }
             catch (Exception e) when (!ModLoader.IsExitGuiException(e)) { ReportOverlayFailure(e); }
             ModLoader.Dispatch(nameof(Mod.OnGUI), GuiAction);
+            HostHooks.Run(GuiHook);
         }
 
         private void OnApplicationQuit()

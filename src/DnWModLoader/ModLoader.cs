@@ -213,6 +213,7 @@ namespace DnWModLoader
             Phase = LoaderPhase.Running;
             Logger.Info("First scene loaded: " + SafeActiveSceneName() + ". Game is running.");
             Dispatch(nameof(Mod.OnGameStarted), GameStartedAction);
+            HostHooks.Run(GameStartedHook);
         }
 
         internal static void Shutdown()
@@ -227,6 +228,7 @@ namespace DnWModLoader
         }
 
         private static readonly Action<Mod> GameStartedAction = m => m.OnGameStarted();
+        private static readonly Action<HostHooks> GameStartedHook = h => h.GameStarted();
 
         private static string SafeActiveSceneName()
         {
@@ -1176,11 +1178,13 @@ namespace DnWModLoader
                     Logger.Debug("Scene loaded: " + scene.name + " (" + mode + ")");
                     EnsureBehaviour("scene load");
                     Dispatch(nameof(Mod.OnSceneLoaded), m => m.OnSceneLoaded(scene, mode));
+                    HostHooks.Run(h => h.SceneLoaded(scene, mode));
                 };
                 SceneManager.sceneUnloaded += scene =>
                 {
                     Logger.Debug("Scene unloaded: " + scene.name);
                     Dispatch(nameof(Mod.OnSceneUnloaded), m => m.OnSceneUnloaded(scene));
+                    HostHooks.Run(h => h.SceneUnloaded(scene));
                 };
             }
             catch (Exception e)

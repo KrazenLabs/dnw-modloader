@@ -33,17 +33,27 @@ namespace MelonLoader
 
         public static ReadOnlyCollection<MelonAssembly> LoadedAssemblies { get { lock (Loaded) return Loaded.ToList().AsReadOnly(); } }
 
+        public readonly MelonEvent OnUnregister = new MelonEvent();
+
         internal void AddMelon(MelonBase melon) { lock (_melons) _melons.Add(melon); }
         internal void AddRotten(RottenMelon rotten) { lock (_rotten) _rotten.Add(rotten); }
 
         public void UnregisterMelons(string reason = null, bool silent = false)
         {
-            foreach (var melon in LoadedMelons) melon.Unregister(reason, silent);
+            UnregisterMelons(reason, silent, true, true);
+        }
+
+        internal void UnregisterMelons(string reason, bool silent, bool deinitialize, bool unpatch)
+        {
+            foreach (var melon in LoadedMelons) melon.UnregisterInstance(reason, silent, deinitialize, unpatch);
+            OnUnregister.Invoke();
         }
 
         public static MelonAssembly GetMelonAssemblyOfMember(MemberInfo member, object obj = null)
         {
             if (member == null) return null;
+            var melon = obj as MelonBase;
+            if (melon != null && melon.MelonAssembly != null) return melon.MelonAssembly;
             var assembly = member.DeclaringType != null ? member.DeclaringType.Assembly : null;
             if (assembly == null) return null;
             lock (Loaded) return Loaded.FirstOrDefault(a => a.Assembly == assembly);

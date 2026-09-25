@@ -1,79 +1,112 @@
 using System;
 using System.Collections.Generic;
+using UnityEngine;
 using UnityEngine.InputSystem;
+using UnityEngine.InputSystem.Controls;
+using UnityEngine.InputSystem.LowLevel;
 
 namespace DnWModLoader
 {
-    internal sealed class GameInputBlock
+    internal static class GameInputBlock
     {
-        private readonly HashSet<InputAction> _disabled = new HashSet<InputAction>();
-        private readonly List<InputAction> _enabled = new List<InputAction>();
-        private bool _active;
-        private bool _failed;
+        private static readonly HashSet<Key> Down = new HashSet<Key>();
+        private static readonly List<Key> Pressed = new List<Key>();
+        private static bool _wanted;
+        private static bool _active;
+        private static bool _failed;
+        private static int _pressedFrame = -1;
+        private static int _heldBack;
 
-        public void Block()
+        public static bool Capturing { get { return _active; } }
+
+        public static void Block()
         {
-            _active = true;
+            _wanted = true;
         }
 
-        public void Maintain()
+        public static void Maintain()
         {
-            if (!_active || _failed) return;
+            if (!_wanted || _active || _failed) return;
             try
             {
-                _enabled.Clear();
-                InputSystem.ListEnabledActions(_enabled);
-                foreach (var action in _enabled)
-                {
-                    try
-                    {
-                        action.Disable();
-                        _disabled.Add(action);
-                    }
-                    catch (Exception e)
-                    {
-                        ModLoader.Logger.Debug("Could not disable input action " + action.name + " : " + e.Message);
-                    }
-                }
+                Down.Clear();
+                Pressed.Clear();
+                _heldBack = 0;
+                var keyboard = Keyboard.current;
+                if (keyboard != null)
+                    foreach (var control in keyboard.allKeys)
+                        if (control.isPressed) Down.Add(control.keyCode);
+                foreach (var device in InputSystem.devices)
+                    if (device is Keyboard || device is Pointer || device is Gamepad || device is Joystick) InputSystem.ResetDevice(device);
+                InputSystem.onEvent += OnEvent;
+                _active = true;
             }
             catch (Exception e)
             {
                 _failed = true;
                 ModLoader.Logger.Warning("Could not block game input: " + e.Message);
             }
-            finally
-            {
-                _enabled.Clear();
-            }
         }
 
-        public void Restore()
+        public static void Restore()
         {
-            _active = false;
+            _wanted = false;
             _failed = false;
-            if (_disabled.Count == 0) return;
-            int restored = 0;
-            foreach (var action in _disabled)
-            {
-                try
-                {
-                    if (action.enabled || !IsAlive(action)) continue;
-                    action.Enable();
-                    restored++;
-                }
-                catch (Exception e)
-                {
-                    ModLoader.Logger.Debug("Could not re-enable input action " + action.name + ": " + e.Message);
-                }
-            }
-            _disabled.Clear();
-            ModLoader.Logger.Debug("Re-enabled " + restored + " game input action(s).");
+            if (!_active) return;
+            _active = false;
+            try { InputSystem.onEvent -= OnEvent; }
+            catch (Exception e) { ModLoader.Logger.Debug("Could not release game input: " + e.Message); }
+            Down.Clear();
+            Pressed.Clear();
+            ModLoader.Logger.Debug("Game input released; " + _heldBack + " input event(s) blocked");
         }
 
-        private static bool IsAlive(InputAction action)
+        public static bool WasPressedThisFrame(Key key)
         {
-            var asset = action.actionMap != null ? action.actionMap.asset : null;
-            return ReferenceEquals(asset, null) || asset != null;
+            return _pressedFrame == Time.frameCount && Pressed.Contains(key);
+        }
+
+        public static bool TryGetPressedThisFrame(out Key key)
+        {
+            key = Key.None;
+            if (_pressedFrame != Time.frameCount || Pressed.Count == 0) return false;
+            key = Pressed[0];
+            return true;
+        }
+
+        private static void OnEvent(InputEventPtr eventPtr, InputDevice device)
+        {
+            if (!_active) return;
+            bool state = eventPtr.IsA<StateEvent>() || eventPtr.IsA<DeltaStateEvent>();
+            if (!state && !eventPtr.IsA<TextEvent>() && !eventPtr.IsA<IMECompositionEvent>()) return;
+            if (state && device is Keyboard keyboard) Capture(keyboard, eventPtr);
+            eventPtr.handled = true;
+            _heldBack++;
+        }
+
+        private static void Capture(Keyboard keyboard, InputEventPtr eventPtr)
+        {
+            foreach (KeyControl control in keyboard.allKeys)
+            {
+                float value;
+                if (!control.ReadValueFromEvent(eventPtr, out value)) continue;
+                var key = control.keyCode;
+                if (key == Key.None) continue;
+                if (value >= control.pressPointOrDefault)
+                {
+                    if (!Down.Add(key)) continue;
+                    if (_pressedFrame != Time.frameCount)
+                    {
+                        Pressed.Clear();
+                        _pressedFrame = Time.frameCount;
+                    }
+                    Pressed.Add(key);
+                }
+                else
+                {
+                    Down.Remove(key);
+                }
+            }
         }
     }
 }

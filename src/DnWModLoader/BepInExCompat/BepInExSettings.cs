@@ -66,19 +66,6 @@ namespace DnWModLoader.BepInExCompat
             return null;
         }
 
-        public void ResetSection(string section)
-        {
-            foreach (var group in EntriesBySection())
-                if (group.Key == section)
-                    foreach (var entry in group.Value) entry.Reset();
-        }
-
-        public void ResetAll()
-        {
-            foreach (var group in EntriesBySection())
-                foreach (var entry in group.Value) entry.Reset();
-        }
-
         public void Reload()
         {
             _file.Reload();
@@ -103,7 +90,7 @@ namespace DnWModLoader.BepInExCompat
         public override object BoxedValue
         {
             get { return _entry.BoxedValue; }
-            set { _entry.BoxedValue = Coerce(value, _entry.SettingType); }
+            set { _entry.BoxedValue = SettingValues.Coerce(value, _entry.SettingType); }
         }
 
         public override object BoxedDefault { get { return _entry.DefaultValue; } }
@@ -117,17 +104,11 @@ namespace DnWModLoader.BepInExCompat
 
         public override bool TrySetFromString(string text, out string error)
         {
-            error = null;
+            var type = _entry.SettingType;
+            object parsed;
+            if (!SettingValues.TryParse(text, type, t => BepInConfig.TomlTypeConverter.ConvertToValue(t.Trim(), type), out parsed, out error)) return false;
             try
             {
-                var type = _entry.SettingType;
-                text = text ?? "";
-                object parsed;
-                if (type == typeof(string)) parsed = text;
-                else if (type == typeof(bool)) parsed = ParseBool(text);
-                else if (type.IsEnum) parsed = Enum.Parse(type, text.Trim(), true);
-                else if (IsNumericType(type)) parsed = Convert.ChangeType(text.Trim(), type, CultureInfo.InvariantCulture);
-                else parsed = BepInConfig.TomlTypeConverter.ConvertToValue(text.Trim(), type);
                 _entry.BoxedValue = parsed;
                 return true;
             }
@@ -140,12 +121,11 @@ namespace DnWModLoader.BepInExCompat
 
         public override string ValueToDisplayString()
         {
-            object value = _entry.BoxedValue;
-            if (value == null) return "";
-            if (value is float f) return f.ToString("0.###", CultureInfo.InvariantCulture);
-            if (value is double d) return d.ToString("0.####", CultureInfo.InvariantCulture);
-            if (value is string || value is Enum) return value.ToString();
-            if (value is IConvertible convertible) return convertible.ToString(CultureInfo.InvariantCulture);
+            return SettingValues.Format(_entry.BoxedValue, FormatToml);
+        }
+
+        private string FormatToml(object value)
+        {
             try { return BepInConfig.TomlTypeConverter.ConvertToString(value, _entry.SettingType); }
             catch { return value.ToString(); }
         }
@@ -160,22 +140,6 @@ namespace DnWModLoader.BepInExCompat
         internal override JToken ValueToToken(JsonSerializer serializer) { return JValue.CreateNull(); }
 
         internal override JToken DefaultToToken(JsonSerializer serializer) { return JValue.CreateNull(); }
-
-        private static bool ParseBool(string text)
-        {
-            string t = text.Trim().ToLowerInvariant();
-            if (t == "1" || t == "on" || t == "yes") return true;
-            if (t == "0" || t == "off" || t == "no") return false;
-            return bool.Parse(t);
-        }
-
-        private static object Coerce(object value, Type type)
-        {
-            if (value == null || type.IsInstanceOfType(value)) return value;
-            if (type.IsEnum) return value is string s ? Enum.Parse(type, s, true) : Enum.ToObject(type, value);
-            if (value is IConvertible) return Convert.ChangeType(value, type, CultureInfo.InvariantCulture);
-            return value;
-        }
 
         private static ConfigMeta MetaFor(BepInConfig.ConfigEntryBase entry)
         {

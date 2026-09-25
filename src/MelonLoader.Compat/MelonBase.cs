@@ -77,6 +77,8 @@ namespace MelonLoader
 
         internal virtual void MarkUnregistered() { }
 
+        internal static Action<MelonBase, string> UnregisterHook;
+
         public bool Register()
         {
             MarkRegistered();
@@ -86,12 +88,30 @@ namespace MelonLoader
         public void Unregister(string reason = null, bool silent = false)
         {
             if (!Registered) return;
-            Registered = false;
+            if (MelonAssembly != null) MelonAssembly.UnregisterMelons(reason, silent);
+            else UnregisterInstance(reason, silent, true, true);
+        }
+
+        internal void UnregisterInstance(string reason, bool silent, bool deinitialize, bool unpatch)
+        {
+            if (!Registered) return;
+            if (deinitialize)
+            {
+                try { OnDeinitializeMelon(); }
+                catch (Exception e) { MelonLogger.Error("OnDeinitializeMelon of " + (Info != null ? Info.Name : GetType().FullName) + " threw: " + e); }
+            }
             lock (AllMelons) AllMelons.Remove(this);
             MarkUnregistered();
+            if (unpatch && HarmonyInstance != null)
+            {
+                try { HarmonyInstance.UnpatchSelf(); }
+                catch (Exception e) { MelonLogger.Error("Removing Harmony patches of " + (Info != null ? Info.Name : GetType().FullName) + " failed: " + e); }
+            }
+            Registered = false;
             if (!silent && LoggerInstance != null)
                 LoggerInstance.Warning("Unregistered" + (string.IsNullOrEmpty(reason) ? "." : ": " + reason));
-            try { OnDeinitializeMelon(); } catch { }
+            var hook = UnregisterHook;
+            if (hook != null) hook(this, reason);
         }
 
         public static MelonBase FindMelon(string melonName, string melonAuthor)

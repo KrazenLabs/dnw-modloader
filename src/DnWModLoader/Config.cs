@@ -1,6 +1,5 @@
 using System;
 using System.Collections.Generic;
-using System.Globalization;
 using System.IO;
 using System.Linq;
 using DnWModLoader.Logging;
@@ -48,8 +47,6 @@ namespace DnWModLoader.Config
         bool HasEntries { get; }
         IList<KeyValuePair<string, List<ConfigEntryBase>>> EntriesBySection();
         SectionInfo GetSectionInfo(string section);
-        void ResetSection(string section);
-        void ResetAll();
         void Reload();
     }
 
@@ -153,40 +150,24 @@ namespace DnWModLoader.Config
 
         public static implicit operator T(ConfigEntry<T> entry) { return entry.Value; }
 
+        private static Type Target { get { return Nullable.GetUnderlyingType(typeof(T)) ?? typeof(T); } }
+
         private static T ConvertBoxed(object value)
         {
             if (value is T typed) return typed;
             if (value == null) return default(T);
-            var target = Nullable.GetUnderlyingType(typeof(T)) ?? typeof(T);
-            if (target.IsEnum)
-            {
-                if (value is string s) return (T)Enum.Parse(target, s, true);
-                return (T)Enum.ToObject(target, value);
-            }
-            if (value is IConvertible) return (T)Convert.ChangeType(value, target, CultureInfo.InvariantCulture);
+            if (SettingValues.Coerce(value, Target) is T coerced) return coerced;
             if (value is JToken token) return token.ToObject<T>(ModConfig.Serializer);
             return JToken.FromObject(value, ModConfig.Serializer).ToObject<T>(ModConfig.Serializer);
         }
 
         public override bool TrySetFromString(string text, out string error)
         {
-            error = null;
+            var target = Target;
+            object parsed;
+            if (!SettingValues.TryParse(text, target, t => JsonConvert.DeserializeObject(t, target, ModConfig.SerializerSettings), out parsed, out error)) return false;
             try
             {
-                var target = Nullable.GetUnderlyingType(typeof(T)) ?? typeof(T);
-                object parsed;
-                text = text ?? "";
-                if (target == typeof(string)) parsed = text;
-                else if (target == typeof(bool))
-                {
-                    string t = text.Trim().ToLowerInvariant();
-                    if (t == "1" || t == "on" || t == "yes") parsed = true;
-                    else if (t == "0" || t == "off" || t == "no") parsed = false;
-                    else parsed = bool.Parse(t);
-                }
-                else if (target.IsEnum) parsed = Enum.Parse(target, text.Trim(), true);
-                else if (IsNumericType(target)) parsed = Convert.ChangeType(text.Trim(), target, CultureInfo.InvariantCulture);
-                else parsed = JsonConvert.DeserializeObject(text, target, ModConfig.SerializerSettings);
                 Value = ConvertBoxed(parsed);
                 return true;
             }
@@ -199,14 +180,7 @@ namespace DnWModLoader.Config
 
         public override string ValueToDisplayString()
         {
-            object v = _value;
-            if (v == null) return "";
-            var target = Nullable.GetUnderlyingType(typeof(T)) ?? typeof(T);
-            if (target == typeof(string) || target.IsEnum) return v.ToString();
-            if (target == typeof(float)) return ((float)v).ToString("0.###", CultureInfo.InvariantCulture);
-            if (target == typeof(double)) return ((double)v).ToString("0.####", CultureInfo.InvariantCulture);
-            if (v is IConvertible c) return c.ToString(CultureInfo.InvariantCulture);
-            return JsonConvert.SerializeObject(v, Formatting.None, ModConfig.SerializerSettings);
+            return SettingValues.Format(_value, v => JsonConvert.SerializeObject(v, Formatting.None, ModConfig.SerializerSettings));
         }
 
         private void RaiseChanged()

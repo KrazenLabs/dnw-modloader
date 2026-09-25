@@ -26,7 +26,7 @@ namespace DnWModLoader
         private readonly Action _onLoaderConfigChanged;
         private readonly KeyPicker _picker = new KeyPicker();
         private readonly Dictionary<string, bool> _expanded = new Dictionary<string, bool>();
-        private readonly Dictionary<string, string> _editBuffers = new Dictionary<string, string>();
+        private readonly Dictionary<string, PendingEdit> _edits = new Dictionary<string, PendingEdit>();
         private readonly Dictionary<string, KeyValuePair<string, float>> _errors = new Dictionary<string, KeyValuePair<string, float>>();
 
         private string _search = "";
@@ -51,6 +51,18 @@ namespace DnWModLoader
         public void CancelKeyPick()
         {
             _picker.Cancel();
+        }
+
+        public void CommitEdits()
+        {
+            if (_edits.Count == 0) return;
+            var edits = new List<PendingEdit>(_edits.Values);
+            _edits.Clear();
+            foreach (var edit in edits)
+            {
+                string error = Commit(edit);
+                if (error != null) ModLoader.Logger.Warning("Setting " + edit.Entry.Section + "." + edit.Entry.Key + " was not changed: " + error);
+            }
         }
 
         // Expands one mod, collapses the others
@@ -118,7 +130,11 @@ namespace DnWModLoader
             if (GUILayout.Button((expanded ? "v  " : ">  ") + mod.Info.Name + "  " + mod.Info.VersionString, _header, GUILayout.ExpandWidth(true)) && !filtering)
                 _expanded[modId] = !expanded;
             GUILayout.Label(config.HasPendingChanges ? "saving..." : "", _small, GUILayout.Width(60));
-            if (GUILayout.Button("Reset all", GUILayout.Width(70))) config.ResetAll();
+            var shownEntries = new List<ConfigEntryBase>();
+            foreach (var section in sections) shownEntries.AddRange(section.Value);
+            GUI.enabled = AnyChanged(shownEntries);
+            if (GUILayout.Button("Reset all", GUILayout.Width(70))) ResetEntries(modId, shownEntries);
+            GUI.enabled = true;
             GUILayout.EndHorizontal();
 
             if (expanded)
@@ -157,12 +173,37 @@ namespace DnWModLoader
             GUILayout.BeginHorizontal();
             GUILayout.Label(!string.IsNullOrEmpty(info?.DisplayName) ? info.DisplayName : sectionKey, _sectionHeader);
             GUILayout.FlexibleSpace();
-            if (GUILayout.Button("Reset", GUILayout.Width(ResetWidth))) config.ResetSection(sectionKey);
+            GUI.enabled = AnyChanged(entries);
+            if (GUILayout.Button("Reset", GUILayout.Width(ResetWidth))) ResetEntries(modId, entries);
+            GUI.enabled = true;
             GUILayout.EndHorizontal();
             if (!string.IsNullOrEmpty(info?.Description)) GUILayout.Label(info.Description, _dim);
 
             foreach (var entry in entries)
-                DrawEntry(entry, ControlPrefix + modId + "." + entry.Section + "." + entry.Key);
+                DrawEntry(entry, ControlId(modId, entry));
+        }
+
+        private static string ControlId(string modId, ConfigEntryBase entry)
+        {
+            return ControlPrefix + modId + "." + entry.Section + "." + entry.Key;
+        }
+
+        private static bool AnyChanged(List<ConfigEntryBase> entries)
+        {
+            foreach (var entry in entries)
+                if (!entry.IsDefault) return true;
+            return false;
+        }
+
+        private void ResetEntries(string modId, List<ConfigEntryBase> entries)
+        {
+            foreach (var entry in entries)
+            {
+                entry.Reset();
+                string controlId = ControlId(modId, entry);
+                _edits.Remove(controlId);
+                _errors.Remove(controlId);
+            }
         }
 
         private void DrawEntry(ConfigEntryBase entry, string controlId)
@@ -188,7 +229,7 @@ namespace DnWModLoader
             if (GUILayout.Button("Reset", GUILayout.Width(ResetWidth)))
             {
                 entry.Reset();
-                _editBuffers.Remove(controlId);
+                _edits.Remove(controlId);
             }
             GUI.enabled = true;
             GUILayout.EndHorizontal();
@@ -306,59 +347,68 @@ namespace DnWModLoader
         {
             var type = ValueType(entry);
             double min = entry.Meta.Min.Value, max = entry.Meta.Max.Value;
-            double current = Convert.ToDouble(entry.BoxedValue, CultureInfo.InvariantCulture);
-            double next = GUILayout.HorizontalSlider((float)current, (float)min, (float)max, GUILayout.ExpandWidth(true));
-            double step = entry.Meta.Step;
-            if (ConfigEntryBase.IsIntegerType(type) && step <= 0) step = 1;
-            if (step > 0) next = Math.Round((next - min) / step) * step + min;
-            next = Math.Max(min, Math.Min(max, next));
-            if (Math.Abs(next - current) > 1e-6)
+            float current = (float)Convert.ToDouble(entry.BoxedValue, CultureInfo.InvariantCulture);
+            float slid = GUILayout.HorizontalSlider(current, (float)min, (float)max, GUILayout.ExpandWidth(true));
+            if (!slid.Equals(current))
             {
-                entry.BoxedValue = Convert.ChangeType(next, type, CultureInfo.InvariantCulture);
-                _editBuffers.Remove(controlId);
+                entry.BoxedValue = SettingValues.Coerce(Snap(slid, min, max, entry.Meta.Step, type), type);
+                _edits.Remove(controlId);
             }
             DrawValueField(entry, controlId, ValueFieldWidth);
+        }
+
+        private static double Snap(double value, double min, double max, double step, Type type)
+        {
+            if (ConfigEntryBase.IsIntegerType(type) && step <= 0) step = 1;
+            if (step > 0) value = Math.Round((value - min) / step) * step + min;
+            return Math.Max(min, Math.Min(max, value));
         }
 
         private void DrawValueField(ConfigEntryBase entry, string controlId, float width)
         {
             bool focused = _focusedName == controlId;
-            string value = entry.ValueToDisplayString();
-            if (!focused && _editBuffers.TryGetValue(controlId, out var pending))
+            PendingEdit edit;
+            if (!focused && _edits.TryGetValue(controlId, out edit))
             {
-                _editBuffers.Remove(controlId);
-                if (pending != value) Commit(entry, controlId, pending);
-                value = entry.ValueToDisplayString();
+                _edits.Remove(controlId);
+                Commit(edit);
             }
 
-            string shown = focused && _editBuffers.TryGetValue(controlId, out var buffer) ? buffer : value;
+            var e = Event.current;
+            if (focused && e.type == EventType.KeyDown)
+            {
+                bool enter = e.keyCode == KeyCode.Return || e.keyCode == KeyCode.KeypadEnter;
+                if (enter || e.keyCode == KeyCode.Escape)
+                {
+                    if (_edits.TryGetValue(controlId, out edit))
+                    {
+                        _edits.Remove(controlId);
+                        if (enter) Commit(edit);
+                    }
+                    GUI.FocusControl(null);
+                    e.Use();
+                    focused = false;
+                }
+            }
+
+            string shown = focused && _edits.TryGetValue(controlId, out edit) ? edit.Text : entry.ValueToDisplayString();
             GUI.SetNextControlName(controlId);
             string edited = width > 0f ? GUILayout.TextField(shown, GUILayout.Width(width)) : GUILayout.TextField(shown, GUILayout.ExpandWidth(true));
             if (!focused) return;
-
-            var e = Event.current;
-            bool keyDown = e.type == EventType.KeyDown;
-            if (keyDown && e.keyCode == KeyCode.Escape)
-            {
-                _editBuffers.Remove(controlId);
-                GUI.FocusControl(null);
-                e.Use();
-                return;
-            }
-            if (edited != shown || _editBuffers.ContainsKey(controlId)) _editBuffers[controlId] = edited;
-            if (keyDown && (e.keyCode == KeyCode.Return || e.keyCode == KeyCode.KeypadEnter))
-            {
-                _editBuffers.Remove(controlId);
-                Commit(entry, controlId, edited);
-                GUI.FocusControl(null);
-                e.Use();
-            }
+            if (_edits.TryGetValue(controlId, out edit)) edit.Text = edited;
+            else if (edited != shown) _edits[controlId] = new PendingEdit(entry, controlId, edited);
         }
 
-        private void Commit(ConfigEntryBase entry, string controlId, string text)
+        private string Commit(PendingEdit edit)
         {
-            if (entry.TrySetFromString(text, out string error)) _errors.Remove(controlId);
-            else _errors[controlId] = new KeyValuePair<string, float>("Invalid value: " + error, Time.realtimeSinceStartup);
+            string error = null;
+            if (edit.Text == edit.Entry.ValueToDisplayString() || edit.Entry.TrySetFromString(edit.Text, out error))
+            {
+                _errors.Remove(edit.ControlId);
+                return null;
+            }
+            _errors[edit.ControlId] = new KeyValuePair<string, float>("Invalid value: " + error, Time.realtimeSinceStartup);
+            return error;
         }
 
         private bool DrawLoaderSettings(string filter)
@@ -500,6 +550,20 @@ namespace DnWModLoader
             _small.normal.textColor = new Color(0.72f, 0.72f, 0.78f);
             _error = new GUIStyle(GUI.skin.label) { wordWrap = true };
             _error.normal.textColor = new Color(1f, 0.45f, 0.4f);
+        }
+
+        private sealed class PendingEdit
+        {
+            public PendingEdit(ConfigEntryBase entry, string controlId, string text)
+            {
+                Entry = entry;
+                ControlId = controlId;
+                Text = text;
+            }
+
+            public ConfigEntryBase Entry { get; }
+            public string ControlId { get; }
+            public string Text { get; set; }
         }
     }
 }

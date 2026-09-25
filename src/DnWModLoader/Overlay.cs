@@ -21,7 +21,6 @@ namespace DnWModLoader
         private readonly SettingsPanel _settings;
         private readonly OverlayHotkey _hotkey;
         private readonly GameCursor _cursor = new GameCursor();
-        private readonly GameInputBlock _input = new GameInputBlock();
         private readonly float _bannerUntil;
         private readonly bool _showDirect3D12Warning;
         private readonly bool _showParallelLoaderWarning;
@@ -62,12 +61,13 @@ namespace DnWModLoader
                 if (_visible)
                 {
                     _cursor.Unlock();
-                    _input.Block();
+                    GameInputBlock.Block();
                 }
                 else
                 {
-                    _input.Restore();
+                    GameInputBlock.Restore();
                     _cursor.Restore();
+                    _settings.CommitEdits();
                     _settings.CancelKeyPick();
                     GUI.FocusControl(null);
                     if (_updateNotice == NoticeState.Showing) _updateNotice = NoticeState.Done;
@@ -96,19 +96,19 @@ namespace DnWModLoader
             }
             if (_hotkey.PressedThisFrame() && !HotkeyBlocked) Toggle();
             _cursor.KeepUnlocked();
-            _input.Maintain();
+            GameInputBlock.Maintain();
         }
 
         public void LateUpdate()
         {
             _cursor.KeepUnlocked();
-            _input.Maintain();
+            GameInputBlock.Maintain();
         }
 
         public void ReleaseGame()
         {
             _visible = false;
-            try { _input.Restore(); }
+            try { GameInputBlock.Restore(); }
             catch (Exception e) { ModLoader.Logger.Debug("Restoring game input failed: " + e.Message); }
             try { _cursor.Restore(); }
             catch (Exception e) { ModLoader.Logger.Debug("Releasing the cursor failed: " + e.Message); }

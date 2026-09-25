@@ -38,6 +38,7 @@ namespace DnWModLoader
             if (_useLegacyEvents) return false;
             try
             {
+                if (GameInputBlock.Capturing) return GameInputBlock.WasPressedThisFrame(_key);
                 var keyboard = Keyboard.current;
                 return keyboard != null && keyboard[_key].wasPressedThisFrame;
             }

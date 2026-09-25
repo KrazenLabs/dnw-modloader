@@ -29,9 +29,12 @@ namespace MelonLoader
             lock (_subscribers)
             {
                 if (_subscribers.Any(s => s.Action == (Delegate)action)) return;
-                _subscribers.Add(new Subscriber { Action = action, Priority = priority, OneShot = unsubscribeOnFirstInvocation });
-                _subscribers.Sort((a, b) => a.Priority.CompareTo(b.Priority));
+                int index = _subscribers.FindIndex(s => s.Priority > priority);
+                _subscribers.Insert(index < 0 ? _subscribers.Count : index, new Subscriber { Action = action, Priority = priority, OneShot = unsubscribeOnFirstInvocation });
             }
+
+            var owner = MelonAssembly.GetMelonAssemblyOfMember(action.Method, action.Target);
+            if (owner != null) owner.OnUnregister.Subscribe(() => Unsubscribe(action), 0, true);
 
             if (_oneTimeUse && _invoked) SafeInvoke(action);
         }

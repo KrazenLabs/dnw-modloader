@@ -18,12 +18,15 @@ namespace DnWModLoader.MelonLoaderCompat
     {
         public const string Framework = "MelonLoader";
 
+        private const string SceneInitializedCallback = nameof(MelonMod.OnSceneWasInitialized);
+
         private static readonly List<string> Files = new List<string>();
         private static readonly List<MelonModAdapter> Adapters = new List<MelonModAdapter>();
+        private static readonly List<PendingScene> PendingScenes = new List<PendingScene>();
         private static bool _discovered;
         private static bool _started;
-
-        public static bool HasMelons { get { return Files.Count > 0; } }
+        private static bool _lateStarted;
+        private static bool _quitting;
 
         public static void Discover(IList<string> melonFiles)
         {
@@ -41,22 +44,31 @@ namespace DnWModLoader.MelonLoaderCompat
             SetUpEnvironment();
             Log(LoaderLogLevel.Info, "MelonLoader mod support by DnW Mod Loader " + ModLoader.Version + " (MelonLoader API " + MelonApiVersion + ")");
 
-            foreach (var file in Files.OrderBy(f => f, StringComparer.OrdinalIgnoreCase)) LoadFile(file);
+            foreach (var file in Files.OrderBy(f => f, StringComparer.OrdinalIgnoreCase))
+            {
+                try { LoadFile(file); }
+                catch (Exception e) { Log(LoaderLogLevel.Error, "Could not load " + Path.GetFileName(file) + ": " + ModLogger.Brief(e)); }
+            }
 
-            var ordered = Adapters.OrderBy(a => a.Melon.Priority).ToList();
-            foreach (var adapter in ordered) Initialize(adapter);
+            var ordered = Adapters.OrderBy(a => a.Priority).ToList();
+            Adapters.Clear();
+            Adapters.AddRange(ordered);
+            foreach (var adapter in Adapters) ModLoader.AddExternalMod(adapter.Container);
+
+            foreach (var adapter in Adapters) Register(adapter);
+            Raise(MelonEvents.OnPreSupportModule);
+            foreach (var adapter in Adapters) Patch(adapter);
+            foreach (var adapter in Adapters) Initialize(adapter);
 
             // Global MelonEvents
-            var pump = ordered.FirstOrDefault(a => a.Active);
-            if (pump != null) pump.IsEventPump = true;
+            HostHooks.Add(new Hooks());
 
-            foreach (var adapter in ordered) Summarize(adapter.Container);
+            foreach (var adapter in Adapters) Summarize(adapter.Container);
 
             Raise(MelonEvents.OnApplicationStart);
-            Raise(MelonEvents.OnApplicationLateStart);
-            foreach (var adapter in ordered) Safe(adapter, nameof(MelonMod.OnLateInitializeMelon), () => adapter.Melon.OnLateInitializeMelon());
 
             ModLoader.Logger.Debug("MelonLoader mods started during " + phase + " in " + stopwatch.Elapsed.TotalMilliseconds.ToString("0") + " ms.");
+            if (ModLoader.Phase >= LoaderPhase.Running) LateStart();
         }
 
         private const string MelonApiVersion = "0.7.3";
@@ -64,6 +76,7 @@ namespace DnWModLoader.MelonLoaderCompat
         private static void SetUpEnvironment()
         {
             MelonLogger.Sink = WriteMelonLog;
+            MelonBase.UnregisterHook = OnMelonUnregistered;
 
             MelonUtils.GameDirectoryValue = ModLoader.GameDirectory;
             MelonUtils.BaseDirectoryValue = ModLoader.GameDirectory;
@@ -161,61 +174,77 @@ namespace DnWModLoader.MelonLoaderCompat
                 return;
             }
 
-            MelonMod melon;
-            try
+            var container = CreateContainer(info, path);
+            var adapter = new MelonModAdapter { Container = container, Assembly = assembly, Priority = ReadPriority(assembly) };
+
+            if (ModLoader.Config != null && ModLoader.Config.IsDisabled(container.Info.Id))
             {
-                melon = (MelonMod)Activator.CreateInstance(info.SystemType);
+                container.Status = ModStatus.Disabled;
+                container.Error = "disabled in " + LoaderConfig.FileName;
             }
-            catch (Exception e)
-            {
-                Log(LoaderLogLevel.Error, info.Name + " could not be constructed: " + ModLogger.Brief(e));
-                return;
-            }
-
-            var melonAssembly = MelonAssemblyFactory.Create(assembly, path);
-            var adapter = new MelonModAdapter(melon);
-            var container = CreateContainer(info, path, adapter);
-
-            melon.Info = info;
-            melon.Games = games;
-            melon.MelonAssembly = melonAssembly;
-            melon.ID = info.Name;
-            melon.Priority = ReadPriority(assembly);
-            melon.OptionalDependencies = ReadOptionalDependencies(assembly);
-            melon.AdditionalCredits = ReadCredits(assembly);
-            melon.HarmonyDontPatchAll = assembly.GetCustomAttributes(typeof(HarmonyDontPatchAllAttribute), false).Length > 0
-                                        || info.SystemType.GetCustomAttributes(typeof(HarmonyDontPatchAllAttribute), false).Length > 0;
-            melon.LoggerInstance = new MelonLogger.Instance(info.Name);
-
-            adapter.Container = container;
-            adapter.Assembly = assembly;
-            Adapters.Add(adapter);
 
             string owner;
-            if (!ModLoader.ClaimModId(container, out owner))
+            if (!ModLoader.ClaimModId(container, out owner) && container.Status == ModStatus.Discovered)
             {
                 container.Status = ModStatus.Failed;
                 container.Error = "Duplicate mod id; already provided by " + owner;
                 Log(LoaderLogLevel.Error, info.Name + ": id " + container.Info.Id + " is already used by " + owner + ".");
             }
 
-            ModLoader.AddExternalMod(container);
+            Adapters.Add(adapter);
+            if (container.Status != ModStatus.Discovered) return;
+
+            var melonAssembly = new MelonAssembly(assembly, path);
+            melonAssembly.HarmonyDontPatchAll = MelonUtils.PullAttributeFromAssembly<HarmonyDontPatchAllAttribute>(assembly) != null;
+
+            MelonMod melon;
+            try
+            {
+                melon = (MelonMod)Activator.CreateInstance(info.SystemType, BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic, null, null, null);
+            }
+            catch (Exception e)
+            {
+                melonAssembly.AddRotten(new RottenMelon(info.SystemType, "Failed to create an instance of the Melon.", e));
+                container.Status = ModStatus.Failed;
+                container.Exception = e;
+                container.Error = "could not be constructed: " + ModLogger.Brief(e);
+                Log(LoaderLogLevel.Error, info.Name + " could not be constructed: " + ModLogger.Brief(e));
+                return;
+            }
+
+            melon.Info = info;
+            melon.Games = games;
+            melon.MelonAssembly = melonAssembly;
+            melon.ID = info.Name;
+            melon.Priority = adapter.Priority;
+            melon.OptionalDependencies = ReadOptionalDependencies(assembly);
+            melon.AdditionalCredits = ReadCredits(assembly);
+            melon.HarmonyDontPatchAll = melonAssembly.HarmonyDontPatchAll || TypeSaysDontPatchAll(info.SystemType);
+            melon.LoggerInstance = new MelonLogger.Instance(info.Name);
+            melonAssembly.AddMelon(melon);
+            adapter.Melon = melon;
         }
 
-        private static void Initialize(MelonModAdapter adapter)
+        private static bool TypeSaysDontPatchAll(Type type)
+        {
+            try
+            {
+                return type.GetCustomAttributes(typeof(HarmonyDontPatchAllAttribute), false).Length > 0;
+            }
+            catch (Exception e)
+            {
+                ModLoader.Logger.Debug("Could not read the attributes of " + type.FullName + ": " + ModLogger.Brief(e));
+                return false;
+            }
+        }
+
+        private static void Register(MelonModAdapter adapter)
         {
             var container = adapter.Container;
             if (container.Status != ModStatus.Discovered) return;
 
-            if (ModLoader.Config != null && ModLoader.Config.DisabledMods.Contains(container.Info.Id, StringComparer.OrdinalIgnoreCase))
-            {
-                container.Status = ModStatus.Disabled;
-                return;
-            }
-
             var stopwatch = Stopwatch.StartNew();
             var melon = adapter.Melon;
-
             try
             {
                 melon.HarmonyInstance = new Harmony(container.Info.Id);
@@ -224,33 +253,107 @@ namespace DnWModLoader.MelonLoaderCompat
                 adapter.Logger = new ModLogger(container.Info.Id);
 
                 melon.MarkRegistered();
-                melon.OnPreSupportModule();
                 melon.OnEarlyInitializeMelon();
+                if (melon.Registered) melon.OnPreSupportModule();
+            }
+            catch (Exception e)
+            {
+                Fail(adapter, e);
+            }
+            finally
+            {
+                container.InitializeMilliseconds += stopwatch.Elapsed.TotalMilliseconds;
+            }
+        }
 
-                if (!melon.HarmonyDontPatchAll) melon.HarmonyInstance.PatchAll(adapter.Assembly);
+        private static void Patch(MelonModAdapter adapter)
+        {
+            var container = adapter.Container;
+            var melon = adapter.Melon;
+            if (container.Status != ModStatus.Discovered || !melon.Registered || melon.HarmonyDontPatchAll) return;
 
-                melon.OnInitializeMelon();
+            var stopwatch = Stopwatch.StartNew();
+            foreach (var type in MelonUtils.GetValidTypes(adapter.Assembly))
+            {
+                try
+                {
+                    melon.HarmonyInstance.CreateClassProcessor(type, false).Patch();
+                }
+                catch (HarmonyException e)
+                {
+                    ModLoader.Logger.Exception(e, "MelonLoader mod " + container.Info.Id + ": Harmony patches in " + type.FullName + " failed");
+                    if (string.IsNullOrEmpty(container.Error)) container.Error = "Harmony patches in " + type.FullName + " failed: " + ModLogger.Brief(e);
+                }
+                catch (Exception e)
+                {
+                    ModLoader.Logger.Warning("MelonLoader mod " + container.Info.Id + ": could not check " + type.FullName + " for Harmony patches: " + ModLogger.Brief(e));
+                }
+            }
+            container.InitializeMilliseconds += stopwatch.Elapsed.TotalMilliseconds;
+        }
+
+        private static void Initialize(MelonModAdapter adapter)
+        {
+            var container = adapter.Container;
+            if (container.Status != ModStatus.Discovered) return;
+
+            var stopwatch = Stopwatch.StartNew();
+            var melon = adapter.Melon;
+            try
+            {
                 // Pre-0.5 entry point
                 melon.OnApplicationStart();
+                if (melon.Registered) melon.OnInitializeMelon();
+                if (!melon.Registered) return;
 
                 container.PatchedMethodCount = melon.HarmonyInstance.GetPatchedMethods().Count();
                 container.Status = ModStatus.Loaded;
-                container.Error = null;
                 SubscribePreferenceCallbacks(adapter);
             }
             catch (Exception e)
             {
-                container.Status = ModStatus.Failed;
-                container.Exception = e;
-                container.Error = e.GetType().Name + ": " + e.Message;
-                ModLoader.Logger.Exception(e, "MelonLoader mod " + container.Info.Id + " failed to initialize");
-                try { if (melon.HarmonyInstance != null) melon.HarmonyInstance.UnpatchSelf(); }
-                catch { }
+                Fail(adapter, e);
             }
             finally
             {
-                container.InitializeMilliseconds = stopwatch.Elapsed.TotalMilliseconds;
+                container.InitializeMilliseconds += stopwatch.Elapsed.TotalMilliseconds;
             }
+        }
+
+        private static void Fail(MelonModAdapter adapter, Exception e)
+        {
+            var container = adapter.Container;
+            container.Status = ModStatus.Failed;
+            container.Exception = e;
+            container.Error = e.GetType().Name + ": " + e.Message;
+            ModLoader.Logger.Exception(e, "MelonLoader mod " + container.Info.Id + " failed to initialize");
+            try { adapter.Melon.MelonAssembly.UnregisterMelons(null, true, false, true); }
+            catch (Exception unregisterError) { ModLoader.Logger.Debug("Unregistering " + container.Info.Id + " failed: " + unregisterError.Message); }
+        }
+
+        private static void LateStart()
+        {
+            if (_lateStarted) return;
+            _lateStarted = true;
+            foreach (var adapter in Adapters)
+            {
+                var melon = adapter.Melon;
+                if (adapter.Active) Safe(adapter, nameof(MelonBase.OnApplicationLateStart), () => melon.OnApplicationLateStart());
+                if (adapter.Active) Safe(adapter, nameof(MelonBase.OnLateInitializeMelon), () => melon.OnLateInitializeMelon());
+            }
+            Raise(MelonEvents.OnApplicationLateStart);
+        }
+
+        private static void OnMelonUnregistered(MelonBase melon, string reason)
+        {
+            if (_quitting) return;
+            var adapter = Adapters.FirstOrDefault(a => ReferenceEquals(a.Melon, melon));
+            if (adapter == null) return;
+            var container = adapter.Container;
+            if (container.Status != ModStatus.Loaded && container.Status != ModStatus.Discovered) return;
+            container.Status = ModStatus.Skipped;
+            container.Error = "Unregistered" + (string.IsNullOrEmpty(reason) ? "" : ": " + reason);
+            container.PatchedMethodCount = 0;
         }
 
         private static void SubscribePreferenceCallbacks(MelonModAdapter adapter)
@@ -309,7 +412,7 @@ namespace DnWModLoader.MelonLoaderCompat
             return MelonUtils.PullAttributeFromAssembly<MelonAdditionalCreditsAttribute>(assembly);
         }
 
-        private static ModContainer CreateContainer(MelonInfoAttribute info, string path, MelonModAdapter adapter)
+        private static ModContainer CreateContainer(MelonInfoAttribute info, string path)
         {
             var manifest = new ModManifest
             {
@@ -352,7 +455,7 @@ namespace DnWModLoader.MelonLoaderCompat
             {
                 case ModStatus.Loaded:
                     ModLoader.Logger.Info("  [OK]       " + line + " (" + container.PatchedMethodCount + " patched method(s), "
-                                          + container.InitializeMilliseconds.ToString("0") + " ms)");
+                                          + container.InitializeMilliseconds.ToString("0") + " ms)" + (container.Error != null ? ": " + container.Error : ""));
                     break;
                 case ModStatus.Disabled: ModLoader.Logger.Info("  [DISABLED] " + line); break;
                 case ModStatus.Skipped: ModLoader.Logger.Warning("  [SKIPPED]  " + line + ": " + container.Error); break;
@@ -366,11 +469,43 @@ namespace DnWModLoader.MelonLoaderCompat
             catch (Exception e) { ModLoader.Logger.Exception(e, "A MelonLoader event subscriber threw"); }
         }
 
+        private static void InitializeScenes()
+        {
+            if (PendingScenes.Count == 0) return;
+            var ready = PendingScenes.FindAll(s => s.Seen);
+            PendingScenes.RemoveAll(s => s.Seen);
+            foreach (var scene in PendingScenes) scene.Seen = true;
+
+            foreach (var scene in ready)
+            {
+                foreach (var adapter in Adapters)
+                {
+                    if (!adapter.Active || adapter.Container.IsCallbackDisabled(SceneInitializedCallback)) continue;
+                    try
+                    {
+                        adapter.Melon.OnSceneWasInitialized(scene.BuildIndex, scene.Name);
+                        adapter.Melon.OnLevelWasInitialized(scene.BuildIndex);
+                    }
+                    catch (Exception e)
+                    {
+                        adapter.Container.RecordFailure(SceneInitializedCallback, e);
+                    }
+                }
+                MelonEvents.OnSceneWasInitialized.Invoke(scene.BuildIndex, scene.Name);
+            }
+        }
 
         internal static void Quit()
         {
             if (!_started) return;
+            _quitting = true;
             Raise(MelonEvents.OnApplicationQuit);
+            foreach (var adapter in Adapters)
+            {
+                if (!adapter.Active) continue;
+                try { adapter.Melon.MelonAssembly.UnregisterMelons("MelonLoader is deinitializing.", true, true, false); }
+                catch (Exception e) { adapter.Container.RecordFailure(nameof(MelonBase.OnDeinitializeMelon), e); }
+            }
             Raise(MelonEvents.OnApplicationDefiniteQuit);
             try { MelonPreferences.Save(); }
             catch (Exception e) { ModLoader.Logger.Exception(e, "Saving MelonPreferences failed"); }
@@ -381,82 +516,88 @@ namespace DnWModLoader.MelonLoaderCompat
             try { action(); }
             catch (Exception e) { adapter.Container.RecordFailure(callback, e); }
         }
-    }
 
-    internal static class MelonAssemblyFactory
-    {
-        public static MelonAssembly Create(Assembly assembly, string path)
+        private sealed class PendingScene
         {
-            var ctor = typeof(MelonAssembly).GetConstructor(BindingFlags.NonPublic | BindingFlags.Instance, null,
-                new[] { typeof(Assembly), typeof(string) }, null);
-            return ctor != null ? (MelonAssembly)ctor.Invoke(new object[] { assembly, path }) : null;
+            public int BuildIndex;
+            public string Name;
+            public bool Seen;
+        }
+
+        private sealed class Hooks : HostHooks
+        {
+            public override string Name { get { return Framework; } }
+
+            public override void GameStarted() { LateStart(); }
+            public override void EarlyUpdate() { InitializeScenes(); }
+            public override void Update() { MelonEvents.OnUpdate.Invoke(); }
+            public override void FixedUpdate() { MelonEvents.OnFixedUpdate.Invoke(); }
+            public override void LateUpdate() { MelonEvents.OnLateUpdate.Invoke(); }
+            public override void OnGUI() { MelonEvents.OnGUI.Invoke(); }
+
+            public override void SceneLoaded(Scene scene, LoadSceneMode mode)
+            {
+                PendingScenes.Add(new PendingScene { BuildIndex = scene.buildIndex, Name = scene.name });
+                MelonEvents.OnSceneWasLoaded.Invoke(scene.buildIndex, scene.name);
+            }
+
+            public override void SceneUnloaded(Scene scene)
+            {
+                MelonEvents.OnSceneWasUnloaded.Invoke(scene.buildIndex, scene.name);
+            }
         }
     }
 
     // Presents a MelonMod to the rest of the loader as an ordinary mod
     internal sealed class MelonModAdapter : Mod
     {
-        public MelonModAdapter(MelonMod melon) { Melon = melon; }
-
-        public MelonMod Melon { get; private set; }
+        public MelonMod Melon { get; set; }
         public ModContainer Container { get; set; }
         public Assembly Assembly { get; set; }
 
-        public bool Active { get { return Container != null && Container.Status == ModStatus.Loaded && Melon.Registered; } }
+        public bool Active { get { return Melon != null && Melon.Registered && Container != null && Container.Status == ModStatus.Loaded; } }
 
         // See MelonLoaderHost.Start
-        public bool IsEventPump { get; set; }
+        public int Priority { get; set; }
 
         // Uses melon's own Harmony instance during init
         public override bool AutoPatch { get { return false; } }
 
         public override void OnUpdate()
         {
-            Melon.OnUpdate();
-            if (IsEventPump) MelonEvents.OnUpdate.Invoke();
+            if (Melon.Registered) Melon.OnUpdate();
         }
 
         public override void OnFixedUpdate()
         {
-            Melon.OnFixedUpdate();
-            if (IsEventPump) MelonEvents.OnFixedUpdate.Invoke();
+            if (Melon.Registered) Melon.OnFixedUpdate();
         }
 
         public override void OnLateUpdate()
         {
-            Melon.OnLateUpdate();
-            if (IsEventPump) MelonEvents.OnLateUpdate.Invoke();
+            if (Melon.Registered) Melon.OnLateUpdate();
         }
 
         public override void OnGUI()
         {
-            Melon.OnGUI();
-            if (IsEventPump) MelonEvents.OnGUI.Invoke();
+            if (Melon.Registered) Melon.OnGUI();
         }
 
         public override void OnSceneLoaded(Scene scene, LoadSceneMode mode)
         {
+            if (!Melon.Registered) return;
             Melon.OnSceneWasLoaded(scene.buildIndex, scene.name);
             Melon.OnLevelWasLoaded(scene.buildIndex);
-            Melon.OnSceneWasInitialized(scene.buildIndex, scene.name);
-            Melon.OnLevelWasInitialized(scene.buildIndex);
-            if (IsEventPump)
-            {
-                MelonEvents.OnSceneWasLoaded.Invoke(scene.buildIndex, scene.name);
-                MelonEvents.OnSceneWasInitialized.Invoke(scene.buildIndex, scene.name);
-            }
         }
 
         public override void OnSceneUnloaded(Scene scene)
         {
-            Melon.OnSceneWasUnloaded(scene.buildIndex, scene.name);
-            if (IsEventPump) MelonEvents.OnSceneWasUnloaded.Invoke(scene.buildIndex, scene.name);
+            if (Melon.Registered) Melon.OnSceneWasUnloaded(scene.buildIndex, scene.name);
         }
 
         public override void OnApplicationQuit()
         {
-            Melon.OnApplicationQuit();
-            Melon.OnDeinitializeMelon();
+            if (Melon.Registered) Melon.OnApplicationQuit();
         }
     }
 }
