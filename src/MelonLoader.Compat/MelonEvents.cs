@@ -8,35 +8,44 @@ namespace MelonLoader
     // Priority-ordered subscriber list
     public abstract class MelonEventBase<T> : IDisposable where T : Delegate
     {
+        public class MelonEventSubscriber
+        {
+            public T del;
+            public bool unsubscribeOnFirstInvocation;
+            public int priority;
+            public MelonAssembly melonAssembly;
+        }
+
         private sealed class Subscriber
         {
             public T Action;
             public int Priority;
             public bool OneShot;
+            public MelonAssembly Owner;
         }
 
         private readonly List<Subscriber> _subscribers = new List<Subscriber>();
-        private readonly bool _oneTimeUse;
+        public readonly bool oneTimeUse;
         private bool _invoked;
 
-        protected MelonEventBase(bool oneTimeUse = false) { _oneTimeUse = oneTimeUse; }
+        public MelonEventBase(bool oneTimeUse = false) { this.oneTimeUse = oneTimeUse; }
 
         public bool Disposed { get; private set; }
 
         public void Subscribe(T action, int priority = 0, bool unsubscribeOnFirstInvocation = false)
         {
             if (Disposed || action == null) return;
+            var owner = MelonAssembly.GetMelonAssemblyOfMember(action.Method, action.Target);
             lock (_subscribers)
             {
                 if (_subscribers.Any(s => s.Action == (Delegate)action)) return;
                 int index = _subscribers.FindIndex(s => s.Priority > priority);
-                _subscribers.Insert(index < 0 ? _subscribers.Count : index, new Subscriber { Action = action, Priority = priority, OneShot = unsubscribeOnFirstInvocation });
+                _subscribers.Insert(index < 0 ? _subscribers.Count : index, new Subscriber { Action = action, Priority = priority, OneShot = unsubscribeOnFirstInvocation, Owner = owner });
             }
 
-            var owner = MelonAssembly.GetMelonAssemblyOfMember(action.Method, action.Target);
             if (owner != null) owner.OnUnregister.Subscribe(() => Unsubscribe(action), 0, true);
 
-            if (_oneTimeUse && _invoked) SafeInvoke(action);
+            if (oneTimeUse && _invoked) SafeInvoke(action);
         }
 
         public void Unsubscribe(T action)
@@ -62,9 +71,18 @@ namespace MelonLoader
             lock (_subscribers) return _subscribers.Any(s => s.Action.Method == method && (obj == null || ReferenceEquals(s.Action.Target, obj)));
         }
 
-        public T[] GetSubscribers()
+        public MelonEventSubscriber[] GetSubscribers()
         {
-            lock (_subscribers) return _subscribers.Select(s => s.Action).ToArray();
+            lock (_subscribers)
+            {
+                return _subscribers.Select(s => new MelonEventSubscriber
+                {
+                    del = s.Action,
+                    unsubscribeOnFirstInvocation = s.OneShot,
+                    priority = s.Priority,
+                    melonAssembly = s.Owner,
+                }).ToArray();
+            }
         }
 
         protected void Invoke(Action<T> delegateInvoker)

@@ -141,23 +141,33 @@ namespace DnWModLoader.MelonLoaderCompat
                 return;
             }
 
-            var info = MelonUtils.PullAttributeFromAssembly<MelonInfoAttribute>(assembly);
+            MelonInfoAttribute info;
+            try
+            {
+                info = assembly.GetCustomAttributes(typeof(MelonInfoAttribute), false).OfType<MelonInfoAttribute>().FirstOrDefault();
+            }
+            catch (Exception e)
+            {
+                Log(LoaderLogLevel.Warning, "Could not read MelonInfo assembly of " + Path.GetFileName(path) + ": " + ModLogger.Brief(e));
+                return;
+            }
+
             if (info == null)
             {
-                Log(LoaderLogLevel.Warning, Path.GetFileName(path) + " references MelonLoader but has no [assembly: MelonInfo].");
+                Log(LoaderLogLevel.Warning, Path.GetFileName(path) + " references MelonLoader but has no MelonInfo assembly.");
                 return;
             }
 
             if (info.SystemType == null)
             {
-                Log(LoaderLogLevel.Warning, info.Name + " names no melon type in [assembly: MelonInfo].");
+                Log(LoaderLogLevel.Warning, info.Name + " names no melon type in MelonInfo assembly.");
                 return;
             }
 
             if (typeof(MelonPlugin).IsAssignableFrom(info.SystemType))
             {
                 Log(LoaderLogLevel.Warning, info.Name + " is a MelonLoader plugin, which are not yet supported. "
-                                            + "Please report this as compatibility can potentially be added.");
+                                            + "Please report this.");
                 return;
             }
 

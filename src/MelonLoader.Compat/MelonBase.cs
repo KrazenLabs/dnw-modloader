@@ -128,21 +128,20 @@ namespace MelonLoader
         public object SendMessage(string name, params object[] arguments)
         {
             if (string.IsNullOrEmpty(name)) return null;
-            var method = GetType().GetMethod(name, BindingFlags.Public | BindingFlags.Instance | BindingFlags.FlattenHierarchy);
+            var method = GetType().GetMethod(name, BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.Static);
             if (method == null) return null;
-            try { return method.Invoke(this, arguments); }
+            try { return method.Invoke(method.IsStatic ? null : this, arguments); }
             catch (TargetInvocationException e) { throw e.InnerException ?? e; }
         }
 
-        public static List<object> SendMessageAll(string name, params object[] arguments)
+        public static void SendMessageAll(string name, params object[] arguments)
         {
-            var results = new List<object>();
             foreach (var melon in RegisteredMelons)
             {
-                try { results.Add(melon.SendMessage(name, arguments)); }
+                if (!melon.Registered) continue;
+                try { melon.SendMessage(name, arguments); }
                 catch (Exception e) { MelonLogger.Error("SendMessageAll(" + name + ") threw in " + melon.MelonTypeName + ": " + e.Message); }
             }
-            return results;
         }
 
         public static void ExecuteAll(LemonAction<MelonBase> func, bool unregisterOnFail = false, string unregistrationReason = null)

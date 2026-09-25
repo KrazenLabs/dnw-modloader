@@ -18,6 +18,11 @@ namespace MelonLoader.Logging
         public byte G { get { return _g; } }
         public byte B { get { return _b; } }
 
+        public static ColorARGB FromArgb(uint argb) { return new ColorARGB((byte)(argb >> 24), (byte)(argb >> 16), (byte)(argb >> 8), (byte)argb); }
+        public static ColorARGB FromArgb(byte alpha, byte red, byte green, byte blue) { return new ColorARGB(alpha, red, green, blue); }
+        public static ColorARGB FromArgb(byte alpha, ColorARGB baseColor) { return new ColorARGB(alpha, baseColor._r, baseColor._g, baseColor._b); }
+        public static ColorARGB FromArgb(byte red, byte green, byte blue) { return new ColorARGB(255, red, green, blue); }
+
         public static implicit operator ColorARGB(Color color) { return new ColorARGB(color.A, color.R, color.G, color.B); }
         public static implicit operator Color(ColorARGB color) { return Color.FromArgb(color._a, color._r, color._g, color._b); }
 

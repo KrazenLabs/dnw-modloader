@@ -21,34 +21,32 @@ namespace MelonLoader.Preferences
         object MaxValue { get; }
     }
 
-    public class ValueRange<T> : ValueValidator, IValueRange where T : IComparable<T>
+    public class ValueRange<T> : ValueValidator, IValueRange where T : IComparable
     {
-        public ValueRange(T min, T max)
+        public ValueRange(T minValue, T maxValue)
         {
-            Min = min;
-            Max = max;
+            MinValue = minValue;
+            MaxValue = maxValue;
         }
 
-        public T Min { get; private set; }
-        public T Max { get; private set; }
+        public T MinValue { get; private set; }
+        public T MaxValue { get; private set; }
 
-        public object MinValue { get { return Min; } }
-        public object MaxValue { get { return Max; } }
+        object IValueRange.MinValue { get { return MinValue; } }
+        object IValueRange.MaxValue { get { return MaxValue; } }
 
         public override bool IsValid(object value)
         {
             if (!(value is T)) return false;
-            var typed = (T)value;
-            return typed.CompareTo(Min) >= 0 && typed.CompareTo(Max) <= 0;
+            return MinValue.CompareTo(value) <= 0 && MaxValue.CompareTo(value) >= 0;
         }
 
         public override object EnsureValid(object value)
         {
-            if (!(value is T)) return Min;
-            var typed = (T)value;
-            if (typed.CompareTo(Min) < 0) return Min;
-            if (typed.CompareTo(Max) > 0) return Max;
-            return typed;
+            if (!(value is T)) return MinValue;
+            if (MinValue.CompareTo(value) > 0) return MinValue;
+            if (MaxValue.CompareTo(value) < 0) return MaxValue;
+            return value;
         }
     }
 }
@@ -60,12 +58,12 @@ namespace MelonLoader
         protected MelonPreferences_Entry() { }
 
         public string Identifier { get; internal set; }
-        public string DisplayName { get; internal set; }
-        public string Description { get; internal set; }
-        public string Comment { get { return Description; } }
+        public string DisplayName { get; set; }
+        public string Description { get; set; }
+        public string Comment { get; set; }
         public MelonPreferences_Category Category { get; internal set; }
-        public bool IsHidden { get; internal set; }
-        public bool DontSaveDefault { get; internal set; }
+        public bool IsHidden { get; set; }
+        public bool DontSaveDefault { get; set; }
         public ValueValidator Validator { get; internal set; }
 
         public virtual object BoxedValue { get; set; }
@@ -204,12 +202,18 @@ namespace MelonLoader
 
         public string FilePath { get; private set; }
 
-        public MelonPreferences_Entry<T> CreateEntry<T>(string identifier, T default_value, string display_name = null, bool is_hidden = false)
+        public MelonPreferences_Entry CreateEntry<T>(string identifier, T default_value, string display_name, bool is_hidden)
         {
-            return CreateEntry(identifier, default_value, display_name, null, is_hidden, false, null);
+            return CreateEntry(identifier, default_value, display_name, null, is_hidden, false, null, null);
         }
 
         public MelonPreferences_Entry<T> CreateEntry<T>(string identifier, T default_value, string display_name, string description,
+            bool is_hidden, bool dont_save_default, ValueValidator validator)
+        {
+            return CreateEntry(identifier, default_value, display_name, description, is_hidden, dont_save_default, validator, null);
+        }
+
+        public MelonPreferences_Entry<T> CreateEntry<T>(string identifier, T default_value, string display_name = null, string description = null,
             bool is_hidden = false, bool dont_save_default = false, ValueValidator validator = null, string oldIdentifier = null)
         {
             if (string.IsNullOrEmpty(identifier)) throw new ArgumentNullException("identifier");
@@ -257,18 +261,20 @@ namespace MelonLoader
 
         public bool HasEntry(string identifier) { return GetEntry(identifier) != null; }
 
-        public void DeleteEntry(string identifier)
+        public bool DeleteEntry(string identifier)
         {
             var entry = GetEntry(identifier);
-            if (entry == null) return;
-            lock (Entries) Entries.Remove(entry);
+            bool removed = false;
+            if (entry != null) lock (Entries) removed = Entries.Remove(entry);
+            return MelonPreferences.RemoveStoredValue(this, identifier) || removed;
         }
 
-        public void RenameEntry(string identifier, string newIdentifier)
+        public bool RenameEntry(string identifier, string newIdentifier)
         {
+            if (string.IsNullOrEmpty(newIdentifier)) return false;
             var entry = GetEntry(identifier);
-            if (entry == null || string.IsNullOrEmpty(newIdentifier)) return;
-            entry.Identifier = newIdentifier;
+            if (entry != null) entry.Identifier = newIdentifier;
+            return MelonPreferences.RenameStoredValue(this, identifier, newIdentifier) || entry != null;
         }
 
         public void SetFilePath(string filepath) { SetFilePath(filepath, true, true); }
@@ -329,14 +335,14 @@ namespace MelonLoader
             lock (Categories) return Categories.FirstOrDefault(c => string.Equals(c.Identifier, identifier, StringComparison.Ordinal));
         }
 
-        public static MelonPreferences_Entry<T> CreateEntry<T>(string category_identifier, string entry_identifier, T default_value,
-            string display_name = null, bool is_hidden = false)
+        public static MelonPreferences_Entry CreateEntry<T>(string category_identifier, string entry_identifier, T default_value,
+            string display_name, bool is_hidden)
         {
             return CreateEntry<T>(category_identifier, entry_identifier, default_value, display_name, null, is_hidden, false, null);
         }
 
         public static MelonPreferences_Entry<T> CreateEntry<T>(string category_identifier, string entry_identifier, T default_value,
-            string display_name, string description, bool is_hidden = false, bool dont_save_default = false, ValueValidator validator = null)
+            string display_name = null, string description = null, bool is_hidden = false, bool dont_save_default = false, ValueValidator validator = null)
         {
             var category = GetCategory(category_identifier) ?? CreateCategory(category_identifier);
             return category.CreateEntry(entry_identifier, default_value, display_name, description, is_hidden, dont_save_default, validator);
@@ -543,6 +549,7 @@ namespace MelonLoader
                     if (value == null) continue;
                     if (entry.DontSaveDefault && entry.GetValueAsString() == entry.GetDefaultValueAsString()) continue;
                     if (!string.IsNullOrEmpty(entry.Description)) value.Comments.PrecedingComment = entry.Description;
+                    if (!string.IsNullOrEmpty(entry.Comment)) value.Comments.InlineComment = entry.Comment.Replace("\r", "").Replace('\n', ' ');
                     table.PutValue(entry.Identifier, value, true);
                 }
 
@@ -576,6 +583,32 @@ namespace MelonLoader
             {
                 MelonLogger.Warning("Could not apply the stored value of " + category.Identifier + "." + entry.Identifier + ": " + e.Message);
             }
+        }
+
+        internal static bool RemoveStoredValue(MelonPreferences_Category category, string identifier)
+        {
+            var table = StoredTable(category);
+            return table != null && table.Entries.Remove(identifier);
+        }
+
+        internal static bool RenameStoredValue(MelonPreferences_Category category, string identifier, string newIdentifier)
+        {
+            var table = StoredTable(category);
+            TomlValue value;
+            if (table == null || !table.TryGetValue(identifier, out value) || table.ContainsKey(newIdentifier)) return false;
+            table.Entries.Remove(identifier);
+            table.PutValue(newIdentifier, value, true);
+            return true;
+        }
+
+        private static TomlTable StoredTable(MelonPreferences_Category category)
+        {
+            string path = PathFor(category);
+            if (string.IsNullOrEmpty(path)) return null;
+            var document = FileFor(path, false).Document;
+            if (!document.ContainsKey(category.Identifier)) return null;
+            try { return document.GetSubTable(category.Identifier); }
+            catch { return null; }
         }
 
         internal static void LoadCategoryInternal(MelonPreferences_Category category, bool printmsg)

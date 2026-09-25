@@ -1,5 +1,7 @@
 using System;
-using System.Drawing;
+using System.Linq;
+using System.Reflection;
+using MelonLoader.Logging;
 using Semver;
 
 namespace MelonLoader
@@ -18,11 +20,11 @@ namespace MelonLoader
             SemanticVersion = SemVersion.TryParse(Version, out parsed) ? parsed : null;
         }
 
-        public MelonInfoAttribute(Type type, string name, int versionMajor, int versionMinor, int versionRevision, string downloadLink = null)
-            : this(type, name, versionMajor + "." + versionMinor + "." + versionRevision, null, downloadLink) { }
+        public MelonInfoAttribute(Type type, string name, int versionMajor, int versionMinor, int versionRevision, string author, string downloadLink = null)
+            : this(type, name, versionMajor, versionMinor, versionRevision, null, author, downloadLink) { }
 
         public MelonInfoAttribute(Type type, string name, int versionMajor, int versionMinor, int versionRevision, string versionIdentifier, string author, string downloadLink = null)
-            : this(type, name, versionMajor + "." + versionMinor + "." + versionRevision + (string.IsNullOrEmpty(versionIdentifier) ? "" : "-" + versionIdentifier), author, downloadLink) { }
+            : this(type, name, versionMajor + "." + versionMinor + "." + versionRevision + (versionIdentifier ?? ""), author, downloadLink) { }
 
         public Type SystemType { get; private set; }
         public string Name { get; private set; }
@@ -35,16 +37,25 @@ namespace MelonLoader
     [AttributeUsage(AttributeTargets.Assembly, AllowMultiple = true, Inherited = false)]
     public class MelonGameAttribute : Attribute
     {
+        private const string Unknown = "UNKNOWN";
+
         public MelonGameAttribute(string developer = null, string name = null)
         {
             Developer = developer;
             Name = name;
-            Universal = string.IsNullOrEmpty(developer) || string.IsNullOrEmpty(name);
         }
 
         public string Developer { get; private set; }
         public string Name { get; private set; }
-        public bool Universal { get; private set; }
+
+        public bool Universal
+        {
+            get
+            {
+                return string.IsNullOrEmpty(Developer) || Developer.Equals(Unknown, StringComparison.Ordinal)
+                       || string.IsNullOrEmpty(Name) || Name.Equals(Unknown, StringComparison.Ordinal);
+            }
+        }
 
         public bool IsCompatible(string developer, string gameName)
         {
@@ -94,40 +105,49 @@ namespace MelonLoader
     [AttributeUsage(AttributeTargets.Assembly, AllowMultiple = false, Inherited = false)]
     public class MelonPriorityAttribute : Attribute
     {
+        public int Priority;
+
         public MelonPriorityAttribute(int priority = 0) { Priority = priority; }
-        public int Priority { get; private set; }
     }
 
     [AttributeUsage(AttributeTargets.Assembly, AllowMultiple = false, Inherited = false)]
     public class MelonColorAttribute : Attribute
     {
-        public MelonColorAttribute() { Color = ConsoleColor.Gray; DrawingColor = System.Drawing.Color.LightGray; }
-        public MelonColorAttribute(ConsoleColor color) { Color = color; DrawingColor = System.Drawing.Color.LightGray; }
+        public MelonColorAttribute() { DrawingColor = MelonLogger.DefaultTextColor; }
+        public MelonColorAttribute(ConsoleColor color) { Color = color == ConsoleColor.Black ? LogColors.ToConsoleColor(MelonLogger.DefaultMelonColor) : color; }
 
         public MelonColorAttribute(int alpha, int red, int green, int blue)
         {
-            Color = ConsoleColor.Gray;
-            DrawingColor = System.Drawing.Color.FromArgb(alpha, red, green, blue);
+            DrawingColor = ColorARGB.FromArgb((byte)alpha, (byte)red, (byte)green, (byte)blue);
         }
 
-        public ConsoleColor Color { get; private set; }
-        public Color DrawingColor { get; private set; }
+        public ConsoleColor Color
+        {
+            get { return LogColors.ToConsoleColor(DrawingColor); }
+            set { DrawingColor = LogColors.FromConsoleColor(value); }
+        }
+
+        public ColorARGB DrawingColor { get; internal set; }
     }
 
     [AttributeUsage(AttributeTargets.Assembly, AllowMultiple = false, Inherited = false)]
     public class MelonAuthorColorAttribute : Attribute
     {
-        public MelonAuthorColorAttribute() { Color = ConsoleColor.Gray; DrawingColor = System.Drawing.Color.LightGray; }
-        public MelonAuthorColorAttribute(ConsoleColor color) { Color = color; DrawingColor = System.Drawing.Color.LightGray; }
+        public MelonAuthorColorAttribute() { DrawingColor = MelonLogger.DefaultTextColor; }
+        public MelonAuthorColorAttribute(ConsoleColor color) { Color = color == ConsoleColor.Black ? LogColors.ToConsoleColor(MelonLogger.DefaultMelonColor) : color; }
 
         public MelonAuthorColorAttribute(int alpha, int red, int green, int blue)
         {
-            Color = ConsoleColor.Gray;
-            DrawingColor = System.Drawing.Color.FromArgb(alpha, red, green, blue);
+            DrawingColor = ColorARGB.FromArgb((byte)alpha, (byte)red, (byte)green, (byte)blue);
         }
 
-        public ConsoleColor Color { get; private set; }
-        public Color DrawingColor { get; private set; }
+        public ConsoleColor Color
+        {
+            get { return LogColors.ToConsoleColor(DrawingColor); }
+            set { DrawingColor = LogColors.FromConsoleColor(value); }
+        }
+
+        public ColorARGB DrawingColor { get; internal set; }
     }
 
     [AttributeUsage(AttributeTargets.Assembly, AllowMultiple = false, Inherited = false)]
@@ -149,6 +169,17 @@ namespace MelonLoader
 
         public string EXE_Name { get; private set; }
         public bool Universal { get; private set; }
+
+        public bool IsCompatible(string processName)
+        {
+            if (Universal || string.IsNullOrEmpty(processName)) return true;
+            return string.Equals(WithoutExe(processName), WithoutExe(EXE_Name), StringComparison.Ordinal);
+        }
+
+        private static string WithoutExe(string name)
+        {
+            return name != null && name.EndsWith(".exe", StringComparison.Ordinal) ? name.Substring(0, name.Length - 4) : name;
+        }
     }
 
     [AttributeUsage(AttributeTargets.Assembly, AllowMultiple = true, Inherited = false)]
@@ -171,6 +202,11 @@ namespace MelonLoader
 
         public MelonPlatformAttribute(params CompatiblePlatforms[] platforms) { Platforms = platforms; }
         public CompatiblePlatforms[] Platforms { get; private set; }
+
+        public bool IsCompatible(CompatiblePlatforms platform)
+        {
+            return Platforms == null || Platforms.Length == 0 || Platforms.Contains(platform);
+        }
     }
 
     [AttributeUsage(AttributeTargets.Assembly, AllowMultiple = false, Inherited = false)]
@@ -180,6 +216,11 @@ namespace MelonLoader
 
         public MelonPlatformDomainAttribute(CompatibleDomains domain = CompatibleDomains.UNIVERSAL) { Domain = domain; }
         public CompatibleDomains Domain { get; private set; }
+
+        public bool IsCompatible(CompatibleDomains domain)
+        {
+            return Domain == CompatibleDomains.UNIVERSAL || domain == CompatibleDomains.UNIVERSAL || Domain == domain;
+        }
     }
 
     [AttributeUsage(AttributeTargets.Assembly, AllowMultiple = false, Inherited = false)]
@@ -213,14 +254,16 @@ namespace MelonLoader
     [AttributeUsage(AttributeTargets.Assembly, AllowMultiple = false, Inherited = false)]
     public class VerifyLoaderVersionAttribute : Attribute
     {
-        public VerifyLoaderVersionAttribute(string version, bool is_minimum = false)
+        public VerifyLoaderVersionAttribute(string version) : this(version, false) { }
+
+        public VerifyLoaderVersionAttribute(string version, bool is_minimum)
         {
             SemVersion parsed;
             SemVer = SemVersion.TryParse(version, out parsed) ? parsed : null;
             IsMinimum = is_minimum;
         }
 
-        public VerifyLoaderVersionAttribute(SemVersion semver, bool is_minimum = false) { SemVer = semver; IsMinimum = is_minimum; }
+        public VerifyLoaderVersionAttribute(SemVersion semver, bool is_minimum) { SemVer = semver; IsMinimum = is_minimum; }
         public VerifyLoaderVersionAttribute(int major, int minor, int patch) : this(new SemVersion(major, minor, patch), false) { }
         public VerifyLoaderVersionAttribute(int major, int minor, int patch, bool is_minimum) : this(new SemVersion(major, minor, patch), is_minimum) { }
 
@@ -233,6 +276,18 @@ namespace MelonLoader
         public int Minor { get { return SemVer != null ? SemVer.Minor : 0; } }
         public int Patch { get { return SemVer != null ? SemVer.Patch : 0; } }
         public string Prerelease { get { return SemVer != null ? SemVer.Prerelease : null; } }
+
+        public bool IsCompatible(SemVersion version)
+        {
+            if (SemVer == null || version == null) return true;
+            return IsMinimum ? SemVer <= version : SemVer == version;
+        }
+
+        public bool IsCompatible(string version)
+        {
+            SemVersion parsed;
+            return !SemVersion.TryParse(version, out parsed) || IsCompatible(parsed);
+        }
     }
 
     [AttributeUsage(AttributeTargets.Assembly, AllowMultiple = false, Inherited = false)]
@@ -240,6 +295,11 @@ namespace MelonLoader
     {
         public VerifyLoaderBuildAttribute(string hashcode = null) { HashCode = hashcode; }
         public string HashCode { get; private set; }
+
+        public bool IsCompatible(string hashCode)
+        {
+            return string.IsNullOrEmpty(HashCode) || string.IsNullOrEmpty(hashCode) || HashCode == hashCode;
+        }
     }
 
     // Stops the host from calling HarmonyInstance.PatchAll for this melon.
@@ -257,11 +317,15 @@ namespace MelonLoader
         public RegisterTypeInIl2Cpp() { }
         public RegisterTypeInIl2Cpp(bool logSuccess) { LogSuccess = logSuccess; }
         public bool LogSuccess { get; private set; }
+
+        public static void RegisterAssembly(Assembly asm) { }
     }
 
     [AttributeUsage(AttributeTargets.Class, AllowMultiple = false, Inherited = false)]
     public class RegisterTypeInIl2CppWithInterfaces : Attribute
     {
+        public RegisterTypeInIl2CppWithInterfaces() { }
+        public RegisterTypeInIl2CppWithInterfaces(bool logSuccess) { LogSuccess = logSuccess; }
         public RegisterTypeInIl2CppWithInterfaces(params Type[] interfaces) { Interfaces = interfaces; }
 
         public RegisterTypeInIl2CppWithInterfaces(bool logSuccess, params Type[] interfaces)
@@ -272,5 +336,7 @@ namespace MelonLoader
 
         public bool LogSuccess { get; private set; }
         public Type[] Interfaces { get; private set; }
+
+        public static void RegisterAssembly(Assembly asm) { }
     }
 }

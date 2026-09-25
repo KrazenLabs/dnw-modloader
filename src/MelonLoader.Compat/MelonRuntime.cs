@@ -1,7 +1,10 @@
 using System;
 using System.Collections;
+using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using System.Reflection;
+using MelonLoader.Utils;
 using UnityEngine;
 
 namespace MelonLoader
@@ -46,7 +49,14 @@ namespace MelonLoader
         public static string GameName { get { return SafeApplication(() => Application.productName); } }
         public static string GameDeveloper { get { return SafeApplication(() => Application.companyName); } }
         public static string GameVersion { get { return SafeApplication(() => Application.version); } }
-        public static string CurrentGameAttribute { get { return GameDeveloper + " - " + GameName; } }
+        public static MelonGameAttribute CurrentGameAttribute { get { return new MelonGameAttribute(GameDeveloper, GameName); } }
+
+        public static PlatformID GetPlatform { get { return Environment.OSVersion.Platform; } }
+        public static MelonPlatformAttribute.CompatiblePlatforms CurrentPlatform
+        {
+            get { return Environment.Is64BitProcess ? MelonPlatformAttribute.CompatiblePlatforms.WINDOWS_X64 : MelonPlatformAttribute.CompatiblePlatforms.WINDOWS_X86; }
+        }
+        public static MelonPlatformDomainAttribute.CompatibleDomains CurrentDomain { get { return MelonPlatformDomainAttribute.CompatibleDomains.MONO; } }
 
         public static bool IsWindows { get { return true; } }
         public static bool IsUnix { get { return false; } }
@@ -60,17 +70,27 @@ namespace MelonLoader
         public static string GetUnityVersion() { return SafeApplication(() => Application.unityVersion); }
         public static string GetGameDataDirectory() { return SafeApplication(() => Application.dataPath); }
         public static string GetManagedDirectory() { return Path.Combine(GetGameDataDirectory() ?? "", "Managed"); }
-        public static string GetApplicationPath() { return GameDirectory; }
-
-        public static AppDomain CurrentDomain { get { return AppDomain.CurrentDomain; } }
+        public static string GetApplicationPath() { return MelonEnvironment.GameExecutablePath; }
 
         public static int Clamp(int value, int min, int max) { return value < min ? min : value > max ? max : value; }
         public static float Clamp(float value, float min, float max) { return value < min ? min : value > max ? max : value; }
         public static double Clamp(double value, double min, double max) { return value < min ? min : value > max ? max : value; }
 
+        public static T Clamp<T>(T value, T min, T max) where T : IComparable<T>
+        {
+            if (value.CompareTo(min) < 0) return min;
+            if (value.CompareTo(max) > 0) return max;
+            return value;
+        }
+
         public static string MakePlural(int count, string word)
         {
             return count == 1 ? word : word + "s";
+        }
+
+        public static string MakePlural(this string str, int amount)
+        {
+            return amount == 1 ? str : str + "s";
         }
 
         public static bool IsTypeEqualToName(Type type, string name)
@@ -101,12 +121,32 @@ namespace MelonLoader
             catch { return new T[0]; }
         }
 
-        public static Type[] GetValidTypes(Assembly asm)
+        public static IEnumerable<Type> GetValidTypes(this Assembly asm)
         {
-            if (asm == null) return new Type[0];
-            try { return asm.GetTypes(); }
-            catch (ReflectionTypeLoadException e) { return Array.FindAll(e.Types, t => t != null); }
-            catch { return new Type[0]; }
+            return GetValidTypes(asm, null);
+        }
+
+        public static IEnumerable<Type> GetValidTypes(this Assembly asm, LemonFunc<Type, bool> predicate)
+        {
+            Type[] types;
+            if (asm == null) return Enumerable.Empty<Type>();
+            try { types = asm.GetTypes(); }
+            catch (ReflectionTypeLoadException e) { types = e.Types ?? new Type[0]; }
+            catch { return Enumerable.Empty<Type>(); }
+            return types.Where(t => t != null && (predicate == null || predicate(t))).ToArray();
+        }
+
+        public static Type GetValidType(this Assembly asm, string typeName)
+        {
+            return GetValidType(asm, typeName, null);
+        }
+
+        public static Type GetValidType(this Assembly asm, string typeName, LemonFunc<Type, bool> predicate)
+        {
+            Type type;
+            try { type = asm != null ? asm.GetType(typeName) : null; }
+            catch { type = null; }
+            return type != null && (predicate == null || predicate(type)) ? type : null;
         }
 
         public static bool IsManagedDLL(string path)

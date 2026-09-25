@@ -1,10 +1,12 @@
 using System;
 using System.Globalization;
+using System.Runtime.Serialization;
 using System.Text;
 
 namespace Semver
 {
-    public sealed class SemVersion : IComparable<SemVersion>, IComparable, IEquatable<SemVersion>
+    [Serializable]
+    public sealed class SemVersion : IComparable<SemVersion>, IComparable, IEquatable<SemVersion>, ISerializable
     {
         public SemVersion(int major, int minor = 0, int patch = 0, string prerelease = "", string build = "")
         {
@@ -23,6 +25,17 @@ namespace Semver
             Patch = version.Build > 0 ? version.Build : 0;
             Prerelease = "";
             Build = version.Revision > 0 ? version.Revision.ToString(CultureInfo.InvariantCulture) : "";
+        }
+
+        private SemVersion(SerializationInfo info, StreamingContext context)
+        {
+            if (info == null) throw new ArgumentNullException("info");
+            var parsed = Parse(info.GetString("SemVersion"));
+            Major = parsed.Major;
+            Minor = parsed.Minor;
+            Patch = parsed.Patch;
+            Prerelease = parsed.Prerelease;
+            Build = parsed.Build;
         }
 
         public int Major { get; private set; }
@@ -75,11 +88,26 @@ namespace Semver
 
         public int CompareTo(SemVersion other)
         {
+            return CompareByPrecedence(other);
+        }
+
+        public int CompareByPrecedence(SemVersion other)
+        {
             if (ReferenceEquals(other, null)) return 1;
             int r = Major.CompareTo(other.Major); if (r != 0) return r;
             r = Minor.CompareTo(other.Minor); if (r != 0) return r;
             r = Patch.CompareTo(other.Patch); if (r != 0) return r;
             return ComparePrerelease(Prerelease, other.Prerelease);
+        }
+
+        public bool PrecedenceMatches(SemVersion other)
+        {
+            return CompareByPrecedence(other) == 0;
+        }
+
+        public SemVersion Change(int? major = null, int? minor = null, int? patch = null, string prerelease = null, string build = null)
+        {
+            return new SemVersion(major ?? Major, minor ?? Minor, patch ?? Patch, prerelease ?? Prerelease, build ?? Build);
         }
 
         public int CompareTo(object obj)
@@ -122,6 +150,13 @@ namespace Semver
 
         public override bool Equals(object obj) { return Equals(obj as SemVersion); }
 
+        public static bool Equals(SemVersion versionA, SemVersion versionB)
+        {
+            if (ReferenceEquals(versionA, versionB)) return true;
+            if (ReferenceEquals(versionA, null) || ReferenceEquals(versionB, null)) return false;
+            return versionA.Equals(versionB);
+        }
+
         public override int GetHashCode()
         {
             unchecked
@@ -144,13 +179,20 @@ namespace Semver
             return sb.ToString();
         }
 
-        public static implicit operator SemVersion(Version version) { return new SemVersion(version); }
+        public void GetObjectData(SerializationInfo info, StreamingContext context)
+        {
+            if (info == null) throw new ArgumentNullException("info");
+            info.AddValue("SemVersion", ToString());
+        }
 
-        public static bool operator ==(SemVersion left, SemVersion right) { return Compare(left, right) == 0; }
-        public static bool operator !=(SemVersion left, SemVersion right) { return Compare(left, right) != 0; }
+        public static implicit operator SemVersion(Version version) { return new SemVersion(version); }
+        public static implicit operator SemVersion(string version) { return Parse(version); }
+
+        public static bool operator ==(SemVersion left, SemVersion right) { return Equals(left, right); }
+        public static bool operator !=(SemVersion left, SemVersion right) { return !Equals(left, right); }
         public static bool operator <(SemVersion left, SemVersion right) { return Compare(left, right) < 0; }
         public static bool operator >(SemVersion left, SemVersion right) { return Compare(left, right) > 0; }
-        public static bool operator <=(SemVersion left, SemVersion right) { return Compare(left, right) <= 0; }
-        public static bool operator >=(SemVersion left, SemVersion right) { return Compare(left, right) >= 0; }
+        public static bool operator <=(SemVersion left, SemVersion right) { return Equals(left, right) || Compare(left, right) < 0; }
+        public static bool operator >=(SemVersion left, SemVersion right) { return Equals(left, right) || Compare(left, right) > 0; }
     }
 }
