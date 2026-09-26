@@ -78,6 +78,19 @@ namespace DnWModLoader
             }
         }
 
+        internal static void DispatchTo(ModContainer container, string callback, Action<Mod> action)
+        {
+            if (container == null || !container.CallbacksEnabled || container.IsCallbackDisabled(callback)) return;
+            try
+            {
+                action(container.Instance);
+            }
+            catch (Exception e) when (!IsExitGuiException(e))
+            {
+                container.RecordFailure(callback, e);
+            }
+        }
+
         internal static bool IsExitGuiException(Exception e)
         {
             while (e is TargetInvocationException && e.InnerException != null) e = e.InnerException;

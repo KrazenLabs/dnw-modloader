@@ -157,6 +157,23 @@ namespace DnWModLoader
         }
     }
 
+    public sealed class ResourceFolderDeclaration
+    {
+        [JsonProperty("folder")] public string Folder { get; set; }
+
+        [JsonProperty("name")] public string Name { get; set; }
+
+        [JsonProperty("description")] public string Description { get; set; }
+
+        [JsonProperty("extensions")] public List<string> Extensions { get; set; } = new List<string>();
+
+        [JsonProperty("section")] public string Section { get; set; }
+
+        [JsonProperty("recursive")] public bool Recursive { get; set; } = true;
+
+        public override string ToString() { return Folder ?? "(no folder)"; }
+    }
+
     // mod.json
     public sealed class ModManifest
     {
@@ -184,6 +201,8 @@ namespace DnWModLoader
 
         [JsonProperty("loaderVersion")] public string LoaderVersion { get; set; }
 
+        [JsonProperty("resources")] public List<ResourceFolderDeclaration> Resources { get; set; } = new List<ResourceFolderDeclaration>();
+
         // Optional
         [JsonProperty("url")] public string Url { get; set; }
 
@@ -197,6 +216,7 @@ namespace DnWModLoader
             manifest.Dependencies = manifest.Dependencies ?? new List<ModDependency>();
             manifest.LoadAfter = manifest.LoadAfter ?? new List<string>();
             manifest.LoadBefore = manifest.LoadBefore ?? new List<string>();
+            manifest.Resources = manifest.Resources ?? new List<ResourceFolderDeclaration>();
             return manifest;
         }
     }

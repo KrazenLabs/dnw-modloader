@@ -1,7 +1,7 @@
 <Project TreatAsLocalProperty="GameDir">
 
   <PropertyGroup>
-    <DnwLoaderVersion>1.7.0</DnwLoaderVersion>
+    <DnwLoaderVersion>1.9.0</DnwLoaderVersion>
     <!-- Game folder: -p:GameDir=..., DNW_GAME_DIR, the parent of this folder, Steam's own install folder (registry), or the default Steam location. build.ps1 also searches every Steam library. -->
     <GameDir Condition="'$(GameDir)' == '' And '$(DNW_GAME_DIR)' != ''">$(DNW_GAME_DIR)</GameDir>
     <GameDir Condition="'$(GameDir)' == '' And Exists('$(MSBuildThisFileDirectory)../DragNWash.exe')">$([System.IO.Path]::GetFullPath('$(MSBuildThisFileDirectory)../'))</GameDir>

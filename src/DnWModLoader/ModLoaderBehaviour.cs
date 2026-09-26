@@ -43,6 +43,7 @@ namespace DnWModLoader
             try { Overlay?.Update(); }
             catch (Exception e) { ReportOverlayFailure(e); }
             HostHooks.Run(EarlyUpdateHook);
+            ResourceWatcher.DispatchPending();
             ModLoader.Dispatch(nameof(Mod.OnUpdate), UpdateAction);
             HostHooks.Run(UpdateHook);
             try { DnWModLoader.Config.ModConfig.FlushPending(); }

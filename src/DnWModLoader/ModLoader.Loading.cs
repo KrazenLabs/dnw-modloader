@@ -320,6 +320,7 @@ namespace DnWModLoader
                 instance.Info = info;
                 instance.Logger = new ModLogger(info.Id);
                 instance.Config = new ModConfig(Path.Combine(ConfigDirectory, info.Id + ".json"), instance.Logger);
+                instance.ResourceFolders = ResourceFolder.CreateAll(container, instance.Logger);
                 container.Instance = instance;
                 container.Settings = instance.Config;
 
@@ -332,6 +333,7 @@ namespace DnWModLoader
                 container.PatchedMethodCount = instance.Harmony.GetPatchedMethods().Count();
                 container.Status = ModStatus.Loaded;
                 container.Error = null;
+                ResourceWatcher.Register(instance.ResourceFolders);
             }
             catch (Exception e)
             {

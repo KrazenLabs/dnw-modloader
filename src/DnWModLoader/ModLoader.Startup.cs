@@ -107,6 +107,7 @@ namespace DnWModLoader
         internal static void Shutdown()
         {
             Logger.Info("Application quitting.");
+            ResourceWatcher.Stop();
             if (_melonsFound)
             {
                 try { QuitMelons(); }

@@ -25,6 +25,21 @@ namespace DnWModLoader
         // Directory that contains the mod (or the Mods folder for bare DLLs)
         public string Directory { get { return Info?.Directory; } }
 
+        private static readonly ResourceFolder[] NoResourceFolders = new ResourceFolder[0];
+
+        public IReadOnlyList<ResourceFolder> ResourceFolders { get; internal set; } = NoResourceFolders;
+
+        public ResourceFolder GetResourceFolder(string folder)
+        {
+            if (string.IsNullOrEmpty(folder)) return null;
+            string wanted = ResourceFolder.NormalizeForLookup(folder);
+            foreach (var candidate in ResourceFolders)
+                if (string.Equals(candidate.Folder, wanted, StringComparison.OrdinalIgnoreCase)) return candidate;
+            foreach (var candidate in ResourceFolders)
+                if (string.Equals(candidate.DisplayName, folder.Trim(), StringComparison.OrdinalIgnoreCase)) return candidate;
+            return null;
+        }
+
         private Harmony _harmony;
 
         // Harmony instance whose id is the mod id, created on first access
@@ -69,6 +84,8 @@ namespace DnWModLoader
 
         // Called on UI updates (equivalent to Unity's OnGUI)
         public virtual void OnGUI() { }
+
+        public virtual void OnResourcesChanged(ResourceFolder folder, ResourceChanges changes) { }
 
         // Called just before the game closes
         public virtual void OnApplicationQuit() { }

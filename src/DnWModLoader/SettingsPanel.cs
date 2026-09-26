@@ -23,7 +23,11 @@ namespace DnWModLoader
         private const float KeyWidth = 170f;
         private const float ResetWidth = 52f;
         private const float ClearWidth = 22f;
+        private const float AddFilesWidth = 85f;
+        private const float AddFolderWidth = 95f;
+        private const float OpenFolderWidth = 90f;
         private const float ErrorSeconds = 6f;
+        private static readonly ResourceFolder[] NoFolders = new ResourceFolder[0];
 
         private readonly LoaderConfig _loaderConfig;
         private readonly Action _onLoaderConfigChanged;
@@ -131,38 +135,103 @@ namespace DnWModLoader
 
         private bool DrawMod(ModContainer mod, string filter)
         {
-            if (mod.Status != ModStatus.Loaded || mod.Settings == null) return false;
+            if (mod.Status != ModStatus.Loaded) return false;
             var config = mod.Settings;
+            var folders = FoldersOf(mod);
+            if (config == null && folders.Count == 0) return false;
             string modId = mod.Info.Id;
             bool filtering = filter.Length > 0;
             bool expanded = filtering || IsExpanded(modId, false);
 
             List<KeyValuePair<string, List<ConfigEntryBase>>> sections = null;
+            List<ResourceFolder> shownFolders = null;
             bool anyChanged = false;
             if (expanded)
             {
-                sections = VisibleSections(config, mod.Info, filter);
-                if (sections.Count == 0) return false;
+                sections = config != null ? VisibleSections(config, mod.Info, filter) : new List<KeyValuePair<string, List<ConfigEntryBase>>>();
+                shownFolders = VisibleFolders(folders, mod.Info, config, filter);
+                if (sections.Count == 0 && shownFolders.Count == 0) return false;
                 foreach (var section in sections)
                     if (AnyChanged(section.Value)) { anyChanged = true; break; }
             }
-            else if (!HasVisibleEntries(config, out anyChanged)) return false;
+            else
+            {
+                bool hasEntries = config != null && HasVisibleEntries(config, out anyChanged);
+                if (!hasEntries && folders.Count == 0) return false;
+            }
 
             GUILayout.BeginVertical(_box);
             GUILayout.BeginHorizontal();
             if (GUILayout.Button(Title(mod, expanded), _header, GUILayout.ExpandWidth(true)) && !filtering)
                 _expanded[modId] = !expanded;
-            GUILayout.Label(config.HasPendingChanges ? "saving..." : "", _small, GUILayout.Width(60));
+            GUILayout.Label(config != null && config.HasPendingChanges ? "saving..." : "", _small, GUILayout.Width(60));
             GUI.enabled = anyChanged;
-            if (GUILayout.Button("Reset all", GUILayout.Width(70)))
+            if (GUILayout.Button("Reset all", GUILayout.Width(70)) && config != null)
                 foreach (var section in sections ?? VisibleSections(config, mod.Info, filter)) ResetEntries(modId, section.Value);
             GUI.enabled = true;
             GUILayout.EndHorizontal();
 
             if (expanded)
-                foreach (var section in sections) DrawSection(modId, config, section.Key, section.Value);
+            {
+                foreach (var folder in shownFolders)
+                    if (!HasSection(sections, folder.Section)) DrawResourceFolder(folder);
+                foreach (var section in sections) DrawSection(modId, config, section.Key, section.Value, shownFolders);
+            }
             GUILayout.EndVertical();
             return true;
+        }
+
+        private static IReadOnlyList<ResourceFolder> FoldersOf(ModContainer mod)
+        {
+            var instance = mod.Instance;
+            return instance != null && instance.ResourceFolders != null ? instance.ResourceFolders : NoFolders;
+        }
+
+        private List<ResourceFolder> VisibleFolders(IReadOnlyList<ResourceFolder> folders, ModInfo info, ISettingsSource config, string filter)
+        {
+            var result = new List<ResourceFolder>(folders.Count);
+            bool filtering = filter.Length > 0;
+            bool modMatches = filtering && Matches(filter, info.Name, info.Id);
+            foreach (var folder in folders)
+            {
+                if (filtering && !modMatches)
+                {
+                    var sectionInfo = folder.Section != null && config != null ? config.GetSectionInfo(folder.Section) : null;
+                    if (!Matches(filter, folder.DisplayName, folder.Folder, folder.Description, folder.Section, sectionInfo?.DisplayName)) continue;
+                }
+                result.Add(folder);
+            }
+            return result;
+        }
+
+        private static bool HasSection(List<KeyValuePair<string, List<ConfigEntryBase>>> sections, string sectionKey)
+        {
+            if (sectionKey == null) return false;
+            foreach (var section in sections)
+                if (section.Key == sectionKey) return true;
+            return false;
+        }
+
+        private void DrawResourceFolder(ResourceFolder folder)
+        {
+            string status = folder.ImportStatus;
+            GUILayout.BeginHorizontal();
+            GUILayout.Label(folder.DisplayName, GUILayout.Width(LabelWidth));
+            GUI.enabled = !ResourceImport.Busy;
+            if (GUILayout.Button("Add files...", GUILayout.Width(AddFilesWidth))) ResourceImport.Begin(folder, false);
+            if (GUILayout.Button("Add folder...", GUILayout.Width(AddFolderWidth))) ResourceImport.Begin(folder, true);
+            GUI.enabled = true;
+            if (GUILayout.Button("Open folder", GUILayout.Width(OpenFolderWidth))) folder.Open();
+            GUILayout.Label(status ?? folder.CountLabel, _small, GUILayout.ExpandWidth(true));
+            GUILayout.EndHorizontal();
+
+            string message = folder.ImportMessage;
+            if (message != null)
+            {
+                if (Event.current.type == EventType.Layout && DateTime.UtcNow > folder.ImportMessageUntil) folder.ImportMessage = null;
+                else GUILayout.Label(message, folder.ImportMessageIsError ? _error : _dim);
+            }
+            if (_showDescriptions && !string.IsNullOrEmpty(folder.Description)) GUILayout.Label(folder.Description, _dim);
         }
 
         private string Title(ModContainer mod, bool expanded)
@@ -233,7 +302,7 @@ namespace DnWModLoader
             return !entry.Meta.Hidden && (!entry.Meta.Advanced || _showAdvanced || filtering);
         }
 
-        private void DrawSection(string modId, ISettingsSource config, string sectionKey, List<ConfigEntryBase> entries)
+        private void DrawSection(string modId, ISettingsSource config, string sectionKey, List<ConfigEntryBase> entries, List<ResourceFolder> folders)
         {
             var info = config.GetSectionInfo(sectionKey);
             GUILayout.Space(4);
@@ -245,6 +314,9 @@ namespace DnWModLoader
             GUI.enabled = true;
             GUILayout.EndHorizontal();
             if (!string.IsNullOrEmpty(info?.Description)) GUILayout.Label(info.Description, _dim);
+
+            foreach (var folder in folders)
+                if (folder.Section == sectionKey) DrawResourceFolder(folder);
 
             foreach (var entry in entries)
                 DrawEntry(entry, ControlId(modId, entry));

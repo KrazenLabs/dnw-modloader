@@ -1,3 +1,4 @@
+using System.IO;
 using DnWModLoader;
 using DnWModLoader.Config;
 using HarmonyLib;
@@ -18,6 +19,7 @@ namespace ExampleMod
         private ConfigEntry<HudCorner> _hudCorner;
         private ConfigEntry<bool> _tagVersionLabel;
         private ConfigEntry<bool> _logMenus;
+        private ResourceFolder _notes;
         private GUIStyle _hudStyle;
 
         public enum HudCorner { BottomLeft, BottomRight, TopLeft, TopRight }
@@ -29,17 +31,27 @@ namespace ExampleMod
         {
             Instance = this;
 
-            Config.DescribeSection("HUD", "Status line", "A line of text drawn by this mod's OnGUI callback.");
+            Config.DescribeSection("HUD", "Status line", "A line of text drawn by OnGUI callback.");
             _showHud = Config.Bind("HUD", "ShowHud", true, "Draw the status line.");
             _greeting = Config.Bind("HUD", "Greeting", "Hello from ExampleMod!", "Text shown in the status line.");
             _hudOpacity = Config.Bind("HUD", "Opacity", 0.9f, "Opacity of the status line.", ConfigMeta.Range(0, 1, 0.05));
             _hudFontSize = Config.Bind("HUD", "FontSize", 13, "Font size of the status line.", ConfigMeta.Range(9, 30, 1));
-            _hudCorner = Config.Bind("HUD", "Corner", HudCorner.BottomLeft, "Where the status line is drawn.");
-            Config.DescribeSection("Patches", "Harmony patches", "Toggles for the example patches.");
+            _hudCorner = Config.Bind("HUD", "Corner", HudCorner.BottomLeft, "Status line position.");
+            Config.DescribeSection("Patches", "Harmony patches", "Toggles for example harmony patches.");
             _tagVersionLabel = Config.Bind("Patches", "TagVersionLabel", true, "Prefix the version number in the main menu with 'modded |'.", new ConfigMeta { RequiresRestart = true });
             _logMenus = Config.Bind("Patches", "LogMenuRegistrations", true, "Log every menu the game registers.");
 
+            _notes = GetResourceFolder("Notes");
+            if (_notes != null) Logger.Info(_notes.Files.Count + " note(s) in " + _notes.Path);
+
             Logger.Info("Initialized. Loader " + ModLoader.Version + ", game folder " + ModLoader.GameDirectory);
+        }
+
+        public override void OnResourcesChanged(ResourceFolder folder, ResourceChanges changes)
+        {
+            foreach (string path in changes.Added) Logger.Info("Note added: " + Path.GetFileName(path));
+            foreach (string path in changes.Removed) Logger.Info("Note removed: " + Path.GetFileName(path));
+            foreach (string path in changes.Changed) Logger.Info("Note changed: " + Path.GetFileName(path));
         }
 
         public override void OnAllModsInitialized()
@@ -71,7 +83,7 @@ namespace ExampleMod
             _hudStyle.alignment = right ? TextAnchor.MiddleRight : TextAnchor.MiddleLeft;
             float height = _hudFontSize.Value + 10f;
             GUI.Label(new Rect(12, top ? 30 : Screen.height - height - 4, Screen.width - 24, height),
-                _greeting.Value + "  |  dragon: " + dragon + "  |  scene: " + SceneManager.GetActiveScene().name, _hudStyle);
+                _greeting.Value + "  |  dragon: " + dragon + "  |  scene: " + SceneManager.GetActiveScene().name + "  |  notes: " + (_notes != null ? _notes.Files.Count : 0), _hudStyle);
         }
     }
 

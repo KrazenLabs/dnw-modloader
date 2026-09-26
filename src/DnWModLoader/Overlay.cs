@@ -248,7 +248,7 @@ namespace DnWModLoader
             if (info != null && !string.IsNullOrEmpty(info.Author)) title += "   by " + info.Author;
             GUILayout.Label(title, mod.Status == ModStatus.Failed || mod.Status == ModStatus.Skipped ? _errorStyle : _headerStyle);
             GUILayout.FlexibleSpace();
-            if (mod.Status == ModStatus.Loaded && mod.Settings != null && mod.Settings.HasEntries)
+            if (mod.Status == ModStatus.Loaded && ((mod.Settings != null && mod.Settings.HasEntries) || (mod.Instance != null && mod.Instance.ResourceFolders.Count > 0)))
             {
                 if (GUILayout.Button("Settings", GUILayout.Width(70))) OpenSettings(info.Id);
             }

@@ -59,12 +59,27 @@ inside a mod folder.
   ],
   "loadAfter": ["some.mod"],         // soft ordering
   "loadBefore": ["late.mod"],
+  "resources": [                     // optional, needs loader 1.9.0
+    { "folder": "Songs", "description": "Your own music as .ogg files.", "extensions": [".ogg"], "section": "Music" }
+  ],
   "url": "https://example.com"       // optional
 }
 ```
 
 Version constraints: `>=1.2`, `>1.2`, `<=`, `<`, `=1.2.0`, `^1.2` (same major), `~1.2` (same major.minor), `*`.
 For a bare DLL without `mod.json` describe it with `[ModInfo("id", "Name", "1.0.0")]` on the entry class.
+
+### Resource folders
+
+You can create resource folders inside your mod structure where players can import external resources (for example textures or audio files).
+The loader creates them and offers buttons in the Mod config UI and the Mod Manager that let's players add their resources.
+Only imports files with the listed `extensions` (none = any file; programs and scripts are not allowed).
+
+- `folder` (required): path inside your mod folder. Paths and links outside the mod folder are not allowed.
+- `name`, `description`: label and help text. `section`: settings section to show the row in.
+- `recursive` (default `true`): whether to search through subfolders as well.
+
+`GetResourceFolder("FolderName").Files` lists the files and `OnResourcesChanged(folder, changes)` is called when players add, remove or change files while the game is running.
 
 Check out the included "ExampleMod" for an example of a simple mod that displays some debugging information and uses some Harmony hooks.
 

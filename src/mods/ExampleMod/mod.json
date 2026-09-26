@@ -5,9 +5,19 @@
   "author": "KrazenLabs",
   "description": "Demonstrates config entries, callbacks and Harmony patches.",
   "assembly": "ExampleMod.dll",
-  "loaderVersion": ">=1.0.0",
+  "loaderVersion": ">=1.9.0",
   "dependencies": [],
   "loadAfter": [],
   "loadBefore": [],
+  "resources": [
+    {
+      "folder": "Notes",
+      "description": "Resource folder example. Add .txt files here. Shows the number of imported .txt files in the status bar.",
+      "extensions": [
+        ".txt"
+      ],
+      "section": "HUD"
+    }
+  ],
   "url": "https://www.krazenlabs.com"
 }
