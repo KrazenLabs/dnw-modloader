@@ -14,7 +14,7 @@ A fork of Harmony (copyright (c) 2017 Andreas Pardeike, MIT License, https://git
 Copyright (c) 2016 Maik Macho and the MonoMod contributors. MIT License.
 https://github.com/MonoMod/MonoMod
 
-## UnityDoorstop 4.4.1 — `winhttp.dll` in the drop-in package
+## UnityDoorstop 4.4.1 — `winhttp.dll`, `libdoorstop.so` and `run_dnw.sh` in the package
 
 Copyright (c) NeighTools. GNU Lesser General Public License v3.0 (as stated in the project repository).
 https://github.com/NeighTools/UnityDoorstop

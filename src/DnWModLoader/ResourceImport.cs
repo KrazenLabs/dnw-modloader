@@ -38,7 +38,7 @@ namespace DnWModLoader
             try
             {
                 var thread = new Thread(() => Run(folder, pickFolders, owner)) { IsBackground = true, Name = "DnW file dialog" };
-                thread.SetApartmentState(ApartmentState.STA);
+                if (Platform.IsWindows) thread.SetApartmentState(ApartmentState.STA);
                 thread.Start();
                 return true;
             }
@@ -182,7 +182,7 @@ namespace DnWModLoader
         {
             string baseName = Path.GetFileName(source);
             if (string.IsNullOrEmpty(baseName)) baseName = source.TrimEnd('\\', '/', ':');
-            string prefix = source.EndsWith("\\", StringComparison.Ordinal) ? source : source + "\\";
+            string prefix = ResourceFolder.EndsWithSeparator(source) ? source : source + Path.DirectorySeparatorChar;
 
             var pending = new Stack<string>();
             pending.Push(source);
@@ -269,7 +269,7 @@ namespace DnWModLoader
             {
                 string root = folder.Path;
                 string target = ResourceFolder.TrimSeparators(Path.GetFullPath(Path.Combine(root, relative)));
-                if (!ResourceFolder.IsInside(root, target) || string.Equals(root, target, StringComparison.OrdinalIgnoreCase))
+                if (!ResourceFolder.IsInside(root, target) || string.Equals(root, target, Platform.PathComparison))
                     throw new IOException("Folder outside mod root");
                 string directory = Path.GetDirectoryName(target);
                 if (ResourceFolder.HasLinkBetween(root, directory)) throw new IOException("A folder links outside mod root");

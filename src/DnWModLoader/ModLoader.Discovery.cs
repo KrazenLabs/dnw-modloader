@@ -33,7 +33,7 @@ namespace DnWModLoader
             bundled = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { typeof(ModLoader).Assembly.GetName().Name };
             if (!string.IsNullOrEmpty(directory))
             {
-                foreach (var file in SafeGetFiles(directory, "*.dll"))
+                foreach (var file in SafeGetDlls(directory))
                     if (string.Equals(Path.GetExtension(file), ".dll", StringComparison.OrdinalIgnoreCase)) bundled.Add(Path.GetFileNameWithoutExtension(file));
             }
             _bundledFrom = directory;
@@ -127,7 +127,7 @@ namespace DnWModLoader
                     continue;
                 }
 
-                string manifestPath = Path.Combine(dir, "mod.json");
+                string manifestPath = Platform.MatchCase(dir, "mod.json");
                 if (File.Exists(manifestPath))
                 {
                     var candidate = new Candidate { Directory = dir };
@@ -135,7 +135,7 @@ namespace DnWModLoader
                     {
                         candidate.Manifest = ModManifest.Parse(File.ReadAllText(manifestPath));
                         candidate.AssemblyPath = !string.IsNullOrEmpty(candidate.Manifest.Assembly)
-                            ? Path.Combine(dir, candidate.Manifest.Assembly)
+                            ? Platform.MatchCase(dir, candidate.Manifest.Assembly)
                             : PickAssembly(dir, folderName, out candidate.DiscoveryError);
                     }
                     catch (Exception e)
@@ -146,7 +146,7 @@ namespace DnWModLoader
                     continue;
                 }
 
-                var dlls = SafeGetFiles(dir, "*.dll");
+                var dlls = SafeGetDlls(dir);
                 if (dlls.Length == 0)
                 {
                     Logger.Debug("Ignoring folder " + folderName + " (no mod.json and no DLL)");
@@ -155,7 +155,7 @@ namespace DnWModLoader
                 foreach (var dll in dlls.OrderBy(d => d, StringComparer.OrdinalIgnoreCase)) AddBareDll(result, dir, dll);
             }
 
-            foreach (var dll in SafeGetFiles(ModsDirectory, "*.dll").OrderBy(d => d, StringComparer.OrdinalIgnoreCase)) AddBareDll(result, ModsDirectory, dll);
+            foreach (var dll in SafeGetDlls(ModsDirectory).OrderBy(d => d, StringComparer.OrdinalIgnoreCase)) AddBareDll(result, ModsDirectory, dll);
             return result;
         }
 
@@ -194,16 +194,16 @@ namespace DnWModLoader
             return true;
         }
 
-        private static string[] SafeGetFiles(string dir, string pattern)
+        private static string[] SafeGetDlls(string dir)
         {
-            try { return Directory.GetFiles(dir, pattern, SearchOption.TopDirectoryOnly); }
+            try { return Directory.GetFiles(dir).Where(f => string.Equals(Path.GetExtension(f), ".dll", StringComparison.OrdinalIgnoreCase)).ToArray(); }
             catch { return new string[0]; }
         }
 
         private static string PickAssembly(string dir, string folderName, out string error)
         {
             error = null;
-            var files = SafeGetFiles(dir, "*.dll").Where(d => ReservedName(d) == null).ToArray();
+            var files = SafeGetDlls(dir).Where(d => ReservedName(d) == null).ToArray();
             if (files.Length == 0) { error = "the mod folder contains no DLL"; return null; }
             var dlls = files.Where(d => !IsNativeDll(d)).ToArray();
             if (dlls.Length == 0) { error = "the mod folder contains no compatible DLL"; return null; }

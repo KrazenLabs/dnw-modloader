@@ -8,15 +8,15 @@ It loads mod DLLs from a `Mods` folder next to the game, gives them a small API 
 
 ## Install
 
-Download the [latest version of the DnW Mod Manager](https://github.com/KrazenLabs/dnw-modmanager/releases/latest), which will automatically install the mod loader for you!
+Download the [latest version of the DnW Mod Manager](https://github.com/KrazenLabs/dnw-modmanager/releases/latest), which will automatically install the mod loader for you! (both Windows and Linux are supported)
 
-## BepInEx plugins (experimental)
+## BepInEx plugins
 
 The loader can also run BepInEx 5 plugins through a compatibility layer.
 
 - Only install them through the Mod Manager!
 
-## MelonLoader mods (experimental)
+## MelonLoader mods
 
 The loader can also run MelonLoader **mods** through a compatibility layer.
 
@@ -30,7 +30,9 @@ The `Mods` folder with your mods and settings can remain if you wish to reinstal
 ### Building from source
 
 - Make sure you have .NET SDK 8 or 9 installed.
-- Run build.ps1 using Powershell.  
+- Run build.ps1 using Powershell. (building is currently only supported on Windows as it will generate both builds)
+
+The release zip contains the files for every platform: `winhttp.dll` and `doorstop_config.ini` for Windows and Proton, `run_dnw.sh` and `libdoorstop.so` for native Linux (all UnityDoorstop, see `docs/DOORSTOP-NOTICE.txt`).
 
 ## Writing a mod
 

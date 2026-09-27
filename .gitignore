@@ -11,3 +11,4 @@ release/
 .vs/
 *.af
 *.cm
+tests/

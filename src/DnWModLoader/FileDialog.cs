@@ -4,7 +4,7 @@ using System.Runtime.InteropServices;
 
 namespace DnWModLoader
 {
-    internal static class FileDialog
+    internal static partial class FileDialog
     {
         private const uint CoinitApartmentThreaded = 0x2;
         private const uint ClsctxInprocServer = 0x1;
@@ -81,12 +81,14 @@ namespace DnWModLoader
 
         internal static IntPtr ActiveWindow()
         {
+            if (!Platform.IsWindows) return IntPtr.Zero;
             try { return GetActiveWindow(); }
             catch (Exception) { return IntPtr.Zero; }
         }
 
         internal static string[] Pick(IntPtr owner, bool folders, string title, string filterName, string filterPatterns)
         {
+            if (!Platform.IsWindows) return PickUnix(folders, title, filterName, filterPatterns);
             int initialized = CoInitializeEx(IntPtr.Zero, CoinitApartmentThreaded);
             if (initialized < 0) throw new InvalidOperationException("COM could not be set up for the dialog (0x" + initialized.ToString("X8") + ")");
             try

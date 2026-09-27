@@ -1,6 +1,5 @@
 using System;
 using System.Collections.Generic;
-using System.Diagnostics;
 using System.IO;
 using DnWModLoader.Logging;
 using IOPath = System.IO.Path;
@@ -149,9 +148,7 @@ namespace DnWModLoader
             }
             try
             {
-                string windows = Environment.GetFolderPath(Environment.SpecialFolder.Windows);
-                string explorer = string.IsNullOrEmpty(windows) ? "explorer.exe" : IOPath.Combine(windows, "explorer.exe");
-                using (Process.Start(new ProcessStartInfo(explorer, "\"" + Path + "\"") { UseShellExecute = false })) { }
+                Platform.ShowFolder(Path);
             }
             catch (Exception e)
             {
@@ -228,7 +225,7 @@ namespace DnWModLoader
                     logger.Warning("Resource folder \"" + declaration.Folder + "\" ignored: " + error + ".");
                     continue;
                 }
-                if (result.Exists(f => string.Equals(f.Path, folder.Path, StringComparison.OrdinalIgnoreCase)))
+                if (result.Exists(f => string.Equals(f.Path, folder.Path, Platform.PathComparison)))
                 {
                     logger.Warning("Resource folder \"" + declaration.Folder + "\" is declared twice; ignoring the second one.");
                     continue;
@@ -261,7 +258,7 @@ namespace DnWModLoader
                 scan = Scan(out error);
                 if (scan == null) logger.Warning("Could not read resource folder " + Path + ": " + error);
             }
-            if (scan == null) scan = new Dictionary<string, FileStamp>(StringComparer.OrdinalIgnoreCase);
+            if (scan == null) scan = new Dictionary<string, FileStamp>(Platform.PathComparer);
             Reported = scan;
             LastScan = scan;
             SetFiles(SortedPaths(scan));
@@ -270,7 +267,7 @@ namespace DnWModLoader
         internal Dictionary<string, FileStamp> Scan(out string error)
         {
             error = null;
-            var result = new Dictionary<string, FileStamp>(StringComparer.OrdinalIgnoreCase);
+            var result = new Dictionary<string, FileStamp>(Platform.PathComparer);
             var pending = new Stack<string>();
             pending.Push(Path);
             bool top = true;
@@ -388,8 +385,9 @@ namespace DnWModLoader
                 return false;
             }
             normalized = parts.Count == 0 ? "." : string.Join("\\", parts.ToArray());
+            string relative = string.Join(IOPath.DirectorySeparatorChar.ToString(), parts.ToArray());
             string full;
-            try { full = parts.Count == 0 ? root : TrimSeparators(IOPath.GetFullPath(IOPath.Combine(root, normalized))); }
+            try { full = parts.Count == 0 ? root : TrimSeparators(IOPath.GetFullPath(IOPath.Combine(root, relative))); }
             catch (Exception e)
             {
                 error = e.Message;
@@ -466,8 +464,13 @@ namespace DnWModLoader
         {
             root = TrimSeparators(root);
             path = TrimSeparators(path);
-            string prefix = root.EndsWith("\\", StringComparison.Ordinal) ? root : root + "\\";
-            return string.Equals(root, path, StringComparison.OrdinalIgnoreCase) || path.StartsWith(prefix, StringComparison.OrdinalIgnoreCase);
+            string prefix = EndsWithSeparator(root) ? root : root + IOPath.DirectorySeparatorChar;
+            return string.Equals(root, path, Platform.PathComparison) || path.StartsWith(prefix, Platform.PathComparison);
+        }
+
+        internal static bool EndsWithSeparator(string path)
+        {
+            return !string.IsNullOrEmpty(path) && Array.IndexOf(Separators, path[path.Length - 1]) >= 0;
         }
 
         internal static bool HasLinkBetween(string root, string path)
@@ -499,7 +502,7 @@ namespace DnWModLoader
         private static bool SamePath(string a, string b)
         {
             if (string.IsNullOrEmpty(a) || string.IsNullOrEmpty(b)) return false;
-            try { return string.Equals(TrimSeparators(IOPath.GetFullPath(a)), TrimSeparators(IOPath.GetFullPath(b)), StringComparison.OrdinalIgnoreCase); }
+            try { return string.Equals(TrimSeparators(IOPath.GetFullPath(a)), TrimSeparators(IOPath.GetFullPath(b)), Platform.PathComparison); }
             catch { return false; }
         }
 

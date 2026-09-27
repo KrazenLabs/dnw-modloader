@@ -199,6 +199,7 @@ namespace DnWModLoader
             if (WriteProtectionWarning.Applies()) Logger.Warning(WriteProtectionWarning.LogMessage);
             foreach (var problem in SetupProblems) Logger.Warning(problem);
             try { Logger.Debug("OS: " + SystemInfo.operatingSystem + " | CLR: " + Environment.Version + " | 64-bit: " + Environment.Is64BitProcess); } catch { }
+            try { Logger.Info("Environment: " + RuntimeEnvironment.Describe()); } catch { }
             try { Logger.Debug("Command line: " + string.Join(" ", Environment.GetCommandLineArgs())); } catch { }
             foreach (var line in Preloader.TakeEarlyLog()) Logger.Debug("[preloader] " + line);
             Logger.Debug("Game directory: " + GameDirectory);

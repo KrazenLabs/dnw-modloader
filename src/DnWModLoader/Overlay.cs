@@ -1,5 +1,4 @@
 using System;
-using System.Diagnostics;
 using DnWModLoader.Logging;
 using UnityEngine;
 
@@ -322,7 +321,7 @@ namespace DnWModLoader
         private static void OpenPath(string path)
         {
             if (string.IsNullOrEmpty(path)) return;
-            try { Process.Start(new ProcessStartInfo(path) { UseShellExecute = true }); }
+            try { Platform.OpenPath(path); }
             catch (Exception e) { ModLoader.Logger.Warning("Could not open " + path + ": " + e.Message); }
         }
 

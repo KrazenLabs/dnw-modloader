@@ -1,10 +1,15 @@
-winhttp.dll in this package is UnityDoorstop 4.4.1 by NeighTools, unmodified.
+winhttp.dll (Windows), libdoorstop.so and run_dnw.sh (Linux) in this package are UnityDoorstop 4.4.1 by NeighTools.
 
   Project:  https://github.com/NeighTools/UnityDoorstop
   License:  GNU Lesser General Public License v3.0 (as stated in the project repository)
-  Purpose:  Windows loads it into the game process in place of the system winhttp.dll; it forwards the real
-            WinHTTP functions and, after the Mono runtime starts, runs DnWModLoader\DnWModLoader.dll
-            (static method Doorstop.Entrypoint.Start). It is the same preloader BepInEx uses.
+  Purpose:  Starts DnW Mod Loader (DnWModLoader\DnWModLoader.dll, static method Doorstop.Entrypoint.Start) as soon as
+            the game's Mono runtime is up.
 
-The DnW Mod Loader does not modify UnityDoorstop. Its source code and license text are available at the
-project URL above. Delete winhttp.dll to stop using it.
+run_dnw.sh is based on UnityDoorstop run.sh (x64, 4.4.1) with the following changes:
+  - executable_name is set to "DragNWash"
+  - target_assembly is set to "DnWModLoader/DnWModLoader.dll"
+  - dll_search_path_override is set to "DnWModLoader" and turned into an absolute path next to the script,
+    like target_assembly
+
+The source code and license text of UnityDoorstop are available at the project URL above.
+To stop using it, delete winhttp.dll (Windows) or remove the ./run_dnw.sh launch option (Linux).
